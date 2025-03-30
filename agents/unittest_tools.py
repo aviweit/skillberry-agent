@@ -65,9 +65,11 @@ unittest_function_chat_prompt_template = ChatPromptTemplate.from_messages([
 ])
 
 
-def generate_test_cases(function_name: str, function_description: str, function_code: str) -> List[Dict]:
-    """Generate test cases using LLM with structured output."""
+def _generate_test_cases(function_name: str, function_description: str, function_code: str) -> List[Dict]:
+    """
+    Internal helper to generate test cases using LLM with structured output.
 
+    """
     structured_llm = validator_llm.with_structured_output(schema=TestCasesJsonSchema,
                                                           method="function_calling",
                                                           include_raw=False)
@@ -225,7 +227,7 @@ def validate_tool_using_llm_as_a_coder(name: str, description: str, metadata: di
 
     logger.info("Validating the python code...")
     # Generate test according to the metadata
-    success, unittests = generate_test_cases(name, description, code)
+    success, unittests = _generate_test_cases(name, description, code)
     if not success:
         logger.error("Failed to generate test cases")
         return False, validation_metadata
