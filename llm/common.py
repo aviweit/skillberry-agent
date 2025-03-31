@@ -11,8 +11,7 @@ if "RITS_API_KEY" not in os.environ:
     print("Please set RITS_API_KEY environment variable")
     print("Additional info can be found on #rits-community slack")
     exit(1)
-#DAVIDBR: TODO: Remove this hardcoded IPs
-os.environ["BLUEBERRY_TOOLS_AGENT_API_URL"] = "http://9.148.245.32:7000"
+
 os.environ["RITS_API_URL"] = "https://inference-3scale-apicast-production.apps.rits.fmaas.res.ibm.com"
 os.environ["RITS_PROXY_API_URL"] = "http://9.148.245.32:4000"
 
