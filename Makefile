@@ -1,7 +1,16 @@
-VERSION ?= latest
+.DEFAULT_GOAL := help
+
+BUILD_VERSION ?= latest
 BUILD_DATE := $(shell date +%Y-%m-%d\ %H:%M)
 
-.DEFAULT_GOAL := help
+DOCKER_REPOSITORY_NAME ?= artifactory.haifa.ibm.com:5130
+IMAGE_NAME = blueberry-tools-agent
+
+DOCKER_NAME = $(DOCKER_REPOSITORY_NAME)/$(IMAGE_NAME)
+DOCKER_VERSION = $(BUILD_VERSION)
+
+
+TOOLS_SERVICE_SENTINEL=/tmp/tools-service.pid
 
 AWK := awk
 ifeq ($(OS),Windows_NT)
@@ -24,12 +33,32 @@ help: ## Display this help.
 
 BASE_DIR=$(shell pwd)
 
-.PHONY: start stop
+.PHONY: run
 
-##@ Execute
+##@ Setup & teardown
 
 install_requirements: 
 	pip install -r requirements.txt
 	
 run: install_requirements ## Start blueberry tools-agent.
 	python main.py
+
+##@ Docker
+
+docker_build: ## Build docker image
+	for key in ~/.ssh/*; do ssh-add "$$key" 2>/dev/null ; done
+	DOCKER_BUILDKIT=1 docker build --ssh default --progress=plain --build-arg BUILD_VERSION=$(BUILD_VERSION) --build-arg BUILD_DATE="$(BUILD_DATE)" -t $(DOCKER_NAME):$(DOCKER_VERSION) .
+
+docker_run: docker_stop ## Run the docker image
+	@echo "Running Docker container: $(IMAGE_NAME)"
+	docker run --name $(IMAGE_NAME) --env-file .env -d -v /tmp:/tmp -p 7000:7000 -p 7001:7001 $(DOCKER_NAME):$(DOCKER_VERSION)
+
+docker_stop: ## Stop the docker image
+	@echo "Stopping Docker container: $(IMAGE_NAME)"
+	@docker stop $(IMAGE_NAME) > /dev/null 2>&1 || true
+	@docker rm $(IMAGE_NAME) > /dev/null 2>&1 || true
+
+# make sure that you are login with required credentials
+docker_push: docker_build ## Push docker image
+	docker push $(DOCKER_NAME):$(DOCKER_VERSION)
+
