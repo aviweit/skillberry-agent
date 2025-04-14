@@ -28,47 +28,6 @@ CONFIG_STRUCTURE = {
         "default": 3,
         "label": "Maximum numbers of functions and tools to suggest: "
     },
-    "llm_as_coder": {
-        "type": "group",
-        "label": "LLM as a coder",
-        "children": {
-            "generate_tools_dynamically": {
-                "type": "bool",
-                "default": False,
-                "label": "Generate (code) tools dynamically: "
-            },
-            "model": {
-                "type": "str",
-                "default": "meta-llama/llama-3-3-70b-instruct",
-                "label": "LLM rits model to be used by the coder: ",
-            },
-            "validator_model": {
-                "type": "str",
-                "default": "meta-llama/llama-3-3-70b-instruct",
-                "label": "LLM rits model to be used by the code validator: ",
-            },
-            "temperature": {
-                "type": "float",
-                "default": 0,
-                "label": "The LLM model temperature: "
-            },
-            "unittests_count": {
-                "type": "int",
-                "default": 3,
-                "label": "The number of unittests to generate: "
-            },
-            "skip_unwanted_words_validation": {
-                "type": "bool",
-                "default": False,
-                "label": "Should skip unwanted words validation: "
-            },
-            "skip_security_check": {
-                "type": "bool",
-                "default": False,
-                "label": "Should skip security issues check: "
-            },
-        },
-    },
     "tools_react_agent": {
         "type": "group",
         "label": "Tool calling React agent",
