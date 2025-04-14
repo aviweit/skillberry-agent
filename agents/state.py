@@ -10,7 +10,7 @@ class State(TypedDict):
     original_user_prompt: HumanMessage
     chat_history: list[BaseMessage]
 
-    suggested_tools: List[Dict[str, str]]
+    useful_tools: List[Dict[str, str]]
 
     existing_tools: List[Dict[str, str]]
     need_to_generate_tools: List[Dict[str, str]]

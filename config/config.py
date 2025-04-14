@@ -100,7 +100,7 @@ class DynamicConfig:
         self.save_config()
 
     def get_type(self, key):
-        """Returns the expected type of a configuration key."""
+        """Returns the expected type of configuration key."""
         keys = key.split("__")
         current_structure = self.structure
 

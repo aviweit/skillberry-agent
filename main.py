@@ -11,7 +11,6 @@ from langchain.callbacks.tracers import ConsoleCallbackHandler
 from config.config_structure import CONFIG_STRUCTURE
 from llm.common import check_llm_communication
 from tools_agentic_graph import define_tools_agentic_graph
-from agent_analytics.instrumentation import agent_analytics_sdk
 
 from api_server import api_server
 from config.config_ui import config_ui_app
@@ -33,6 +32,7 @@ if debug is True:
 
     if otel_logging is True:
         # Initialize logging with agent_analytics_sdk
+        from agent_analytics.instrumentation import agent_analytics_sdk
         from agent_analytics.instrumentation.configs import OTLPCollectorConfig
 
         print("otel_logging mode enabled")
