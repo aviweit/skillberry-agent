@@ -41,7 +41,7 @@ class ToolCategory(str, Enum):
     STRUCTURED_TOOL_CATEGORY = "structured"
 
 
-tool_category_descriptions = {
+tool_category_description = {
     ToolCategory.FACTUAL_TOOL_CATEGORY:
         "a tool that provides factual knowledge (e.g., time, date, location, user, weather data, company financials).",
     ToolCategory.EXTERNAL_TOOL_CATEGORY:
@@ -57,8 +57,8 @@ tool_category_candidate_for_generation = {
     ToolCategory.STRUCTURED_TOOL_CATEGORY: True,
 }
 
-tool_category_description = "\n".join(
-    f"- `{key.value}`: {desc}" for key, desc in tool_category_descriptions.items()
+category_descriptions = "\n".join(
+    f"- `{key.value}`: {desc}" for key, desc in tool_category_description.items()
 )
 
 
@@ -67,7 +67,7 @@ class SuggestedTool(BaseModel):
     description: str = Field(description='the description of the tool')
     examples: str = Field(description='Usage examples of the tool')
     category: str = Field(description=f'The tool category. '
-                                      f'Valid values for "category" are:\n {tool_category_description}')
+                                      f'Valid values for "category" are:\n {category_descriptions}')
     candidate_for_generation: Optional[bool]
 
 
@@ -78,7 +78,7 @@ class FindingToolsResponseJsonSchema(BaseModel):
                     '"name" - the name of the tool.\n '
                     '"description" - the description of the tool\n'
                     '"examples" - Usage examples of the tool\n'
-                    '"tool_category" - the category of the tool\n'
+                    '"category" - the category of the tool\n'
     )
 
 
