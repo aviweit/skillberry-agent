@@ -1,21 +1,18 @@
-langchain==0.3.17
-langchain-core==0.3.33
-pydantic==2.9.2
-ipython==8.17.2
-typing_extensions==4.12.2
-langgraph==0.2.68
-langchain-openai==0.3.1
-requests==2.32.3
-pytest==8.3.4
-fastapi==0.115.8
-uvicorn==0.16.0
-flask==3.1.0
-dash==2.9.3
-colorlog==6.9.0
-
-# revise -- indirect requirement from agent-analytics
-python-dotenv==1.0.1
+colorlog>=6.9.0
+dash>=2.9.3
+fastapi>=0.115.12
+Flask>=3.1.0
+ipython>=8.12.3
+langchain>=0.3.23
+langchain_core>=0.3.51
+langchain_openai>=0.3.12
+langgraph>=0.3.29
+pydantic>=2.11.3
+Requests>=2.32.3
+typing_extensions>=4.13.2
+uvicorn>=0.16.0
 
 # agentic observability
+# Disabled for now due to very large amount of python packages requiered by the observability SDK
 
-git+ssh://git@github.ibm.com/agent-analytics/sdk.git@release
+# git+ssh://git@github.ibm.com/agent-analytics/sdk.git@release
