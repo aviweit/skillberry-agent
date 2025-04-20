@@ -14,6 +14,71 @@ An AI system designed to automate gradual reprogramming of workflows with both e
 - **Operational API**: Expose LLM chat completion API allowing integration with any AI application, e.g., AI Agents
 - **Configuration API**: Expose API allowing managment of configurations such as: tools store backend, coder backend, LLM used.
 
+```mermaid
+  graph LR
+    subgraph BTM[blueberry tools maker]
+        direction TB
+        style BTM1 fill:#f99,stroke:#333,stroke-width:2px
+        style BTM2 fill:#f99,stroke:#333,stroke-width:2px
+        style BTM3 fill:#f99,stroke:#333,stroke-width:2px
+        BTM1[Code Tool]
+        BTM2[Verify Tool]
+        BTM3[Generalize Tool]
+    end
+
+    subgraph BTS[blueberry tools service]
+        direction TB
+        style BTS1 fill:#99f,stroke:#333,stroke-width:2px
+        style BTS2 fill:#99f,stroke:#333,stroke-width:2px
+        style BTS3 fill:#99f,stroke:#333,stroke-width:2px
+        style BTS4 fill:#99f,stroke:#333,stroke-width:2px
+        style BTS5 fill:#99f,stroke:#333,stroke-width:2px
+        BTS1[Tools CRUD]
+        BTS2[Life Cycle Management]
+        BTS3[Search Capabilities]
+        BTS4[Execution]
+        BTS5[Observability]
+    end
+
+    subgraph BC[blueberry chatbot]
+        style BC1 fill:#f9f,stroke:#333,stroke-width:2px
+        BC1["Assistant ChatBot<br>(demo)"]
+    end
+
+    subgraph PA[Production Applications]
+        style PA1 fill:#9f9,stroke:#333,stroke-width:2px
+        PA1["Production Applications<br> (e.g., GenAI LH)"]
+    end
+
+    subgraph BTA[blueberry-tools-agent]
+        style BTA1 fill:#ff9,stroke:#333,stroke-width:2px
+        style BTA2 fill:#ff9,stroke:#333,stroke-width:2px
+        style BTA3 fill:#ff9,stroke:#333,stroke-width:2px
+        style BTA4 fill:#ff9,stroke:#333,stroke-width:2px
+        style BTA5 fill:#ff9,stroke:#333,stroke-width:2px
+        style BTA6 fill:#ff9,stroke:#333,stroke-width:2px
+        BTA1>LLM API]
+        BTA2>Suggest Useful Tools]
+        BTA3>Find Existing Tools]
+        BTA4>Code New Tools]
+        BTA5>Verify Tools]
+        BTA6>Execute Tools]
+
+        BTA1 ==> BTA2
+        BTA2 ==> BTA3
+        BTA3 ==> BTA4
+        BTA4 ==> BTA5
+        BTA5 ==> BTA6
+        BTA6 --> BTA1
+
+    end
+
+    BC1 --> BTA1
+    PA1 --> BTA1
+    BTA3 --. use .--> BTS
+    BTA4 --. code .--> BTM
+```
+    
 ## Quickstart 🚀
 
 ### Start the Service
