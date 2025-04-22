@@ -8,6 +8,11 @@ CONFIG_STRUCTURE = {
         "default": "http://9.148.245.32:8000", #DVIDBR: TODO: remove hardcoded IP
         "label": "The tools repository url: ",
     },
+    "tools_maker_base_url": {
+        "type": "str",
+        "default": "http://9.148.245.32:9001",
+        "label": "The tools maker url: ",
+    },
     "use_rits_proxy": {
         "type": "bool",
         "default": True,
@@ -38,6 +43,11 @@ CONFIG_STRUCTURE = {
                 "label": "Maximum number of iterations for the react agent: "
             },
         },
+    },
+    "generate_tools_dynamically": {
+        "type": "bool",
+        "default": False,
+        "label": "Generate (code) tools dynamically: "
     },
     "advanced": {
         "type": "group",

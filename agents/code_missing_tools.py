@@ -1,15 +1,12 @@
 import logging
 
+from config import config, config_structure
 from agents.state import State
-from config.config_ui import config
+
+from utils.tools_maker_api import generate_tool_tools_maker
+
 
 logger = logging.getLogger(__name__)
-
-# search for tools from the repository using API call (semantic search)
-tools_repo_base_url = config.get("tools_repo_base_url")
-post_file_url = f"{tools_repo_base_url}/file/"
-
-headers = {"Accept": "application/json"}
 
 
 def code_missing_tools(state: State):
@@ -21,10 +18,27 @@ def code_missing_tools(state: State):
     logging.info(f"code_missing_tools: need_to_generate_tools: {need_to_generate_tools}")
     for need_to_generate_tool in need_to_generate_tools:
         name = need_to_generate_tool.name
-        logging.info(f"Tool {name} will not be generated")
-        thinking_log.append("I am not allowed to code new tools. ")
+
+        # A flag that allows (or disallows) to generate tools dynamically by the agent
+        my_config = config.DynamicConfig(config_structure.CONFIG_STRUCTURE)
+        generate_tools_dynamically = my_config.get("generate_tools_dynamically")
+        if not generate_tools_dynamically:
+            thinking_log.append("I am not allowed to code new tools. ")
+            logger.info(
+                f"!!! generate_tools_dynamically is False: tool {name} will not be generated !!!")
+            continue
+
+        # TODO: response code, return values
+        generate_tool_tools_maker(
+            need_to_generate_tool.name,
+            need_to_generate_tool.description,
+            need_to_generate_tool.examples
+        )
 
     logging.info(f"=======>>> code_missing_tools. ended <<<=======")
     # update the state with the generated tools
-    return {"generated_tools": generated_tools,
-            "thinking_log": thinking_log}
+
+    return {
+        "generated_tools": generated_tools,
+        "thinking_log": thinking_log
+    }

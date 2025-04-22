@@ -23,15 +23,6 @@ def search_tools(_base_url: str,
         return None
 
 
-def get_tool_description(_base_url: str, name: str):
-    get_description_url = f"{_base_url}/description/"
-    response = requests.get(get_description_url + name, headers=headers)
-    if response.status_code == 200:
-        return response.json()
-    else:
-        return None
-
-
 def get_tool_manifest(_base_url: str, name: str):
     get_metadata_url = f"{_base_url}/manifests/"
     response = requests.get(get_metadata_url + name, headers=headers)
