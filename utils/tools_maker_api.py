@@ -33,6 +33,9 @@ def generate_tool_tools_maker(
     Returns:
         bool: whether operation succeed
 
+    Raises:
+        Exception: Any failure occurred during execution
+
     """
     logger.info(f"generate_tool_tools_maker called for tool: {tool_name}")
 
@@ -44,17 +47,13 @@ def generate_tool_tools_maker(
         api_instance = blueberry_tools_maker_sdk.ApiApi(api_client)
         skip_validation = False # bool |  (optional) (default to False)
 
-        try:
-            api_response = api_instance.api_generate_tool_generate_tool_tool_name_post(
-                tool_name,
-                tool_description,
-                tool_examples,
-                skip_validation=skip_validation
-            )
-            # TODO: remove print
-            print("The response of ApiApi->api_generate_tool_generate_tool_tool_name_post:\n")
-            pprint(api_response)
-            return True
-        except Exception as e:
-            print("Exception when calling ApiApi->api_generate_tool_generate_tool_tool_name_post: %s\n" % e)
-            return False
+        api_response = api_instance.api_generate_tool_generate_tool_tool_name_post(
+            tool_name,
+            tool_description,
+            tool_examples,
+            skip_validation=skip_validation
+        )
+        # TODO: remove print
+        print("The response of ApiApi->api_generate_tool_generate_tool_tool_name_post:\n")
+        pprint(api_response)
+        return api_response

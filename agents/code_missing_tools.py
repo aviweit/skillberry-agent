@@ -28,15 +28,34 @@ def code_missing_tools(state: State):
                 f"!!! generate_tools_dynamically is False: tool {name} will not be generated !!!")
             continue
 
-        # TODO: response code, return values
-        generate_tool_tools_maker(
-            need_to_generate_tool.name,
-            need_to_generate_tool.description,
-            need_to_generate_tool.examples
-        )
+        try:
+            response = generate_tool_tools_maker(
+                need_to_generate_tool.name,
+                need_to_generate_tool.description,
+                need_to_generate_tool.examples
+            )
+
+            generated_tools.append({
+                "name": response["name"],
+                "description": response["description"]
+            })
+        except Exception as e:
+            logger.error(f"code_missing_tools: generate_tool for '{name}' failed: {str(e)}")
+
+    if len(generated_tools) > 0:
+        thinking_log.append("I just coded ephemeral tools that I will use.")
+        tool_descriptions = ""
+        for i, tool in enumerate(generated_tools):
+            tool_description = tool["description"]
+            tool_descriptions += f"{tool_description} "
+            if i < len(generated_tools) - 1:
+                tool_descriptions += ", and a tool that "
+            else:
+                tool_descriptions += "."
+
+        thinking_log.append(f"a tool that {tool_descriptions}")
 
     logging.info(f"=======>>> code_missing_tools. ended <<<=======")
-    # update the state with the generated tools
 
     return {
         "generated_tools": generated_tools,
