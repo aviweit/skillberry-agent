@@ -10,7 +10,7 @@ CONFIG_STRUCTURE = {
     },
     "tools_maker_base_url": {
         "type": "str",
-        "default": "http://9.148.245.32:9001",
+        "default": "http://9.148.245.32:9000",
         "label": "The tools maker url: ",
     },
     "use_rits_proxy": {
