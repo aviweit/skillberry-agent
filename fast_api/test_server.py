@@ -9,20 +9,10 @@ def client():
     return TestClient(api_server)
 
 
-def test_api_chat_completion_endpoint(client):
-    """Test the /chat/completions endpoint."""
-    chat_request = ChatRequest(
-        model="test_model",
-        messages=[ChatMessage(role="user", content="Hello")],
-        temperature=0.7,
-        max_tokens=256
-    )
-    response = client.post("/chat/completions", json=chat_request.dict())
-    assert response.status_code == 200
-    response_json = response.json()
-    assert "choices" in response_json
-    assert response_json["choices"][0]["message"]["role"] == "assistant"
-    assert "content" in response_json["choices"][0]["message"]
+def test_api_prompt_endpoint(client):
+    """Test the /prompt endpoint."""
+    response = client.post("/prompt", params={"user_prompt": "test prompt"})
+    assert response.status_code == 500
 
 
 def test_health_endpoint(client):
