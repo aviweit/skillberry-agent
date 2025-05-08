@@ -50,7 +50,7 @@ run: install_requirements ## Start blueberry tools-agent.
 ##@ Docker
 
 docker_build: ## Build docker image
-	for key in ~/.ssh/*; do ssh-add "$$key" 2>/dev/null ; done
+	for key in ~/.ssh/*; do ssh-add "$$key" 2>/dev/null || true ; done
 	DOCKER_BUILDKIT=1 docker build --ssh default --progress=plain --build-arg BUILD_VERSION=$(BUILD_VERSION) --build-arg BUILD_DATE="$(BUILD_DATE)" -t $(DOCKER_NAME):$(DOCKER_VERSION) .
 
 docker_run: docker_stop ## Run the docker image
