@@ -84,6 +84,11 @@ CONFIG_STRUCTURE = {
                 "default": 5,
                 "label": "Maximum number of tools in the tools shortlisting: ",
             },
+            "max_tools_generation_per_execution": {
+                "type": "int",
+                "default": 10000,
+                "label": "Maximum number of tools that the agent can generate per execution: ",
+            },
         },
     },
 }

@@ -7,8 +7,11 @@ from utils.tools_maker_api import tools_maker
 
 logger = logging.getLogger(__name__)
 
+generated_tools_count = 0
+
 
 def code_missing_tools(state: State):
+    global generated_tools_count
     thinking_log = []
     logging.info(f"=======>>> code_missing_tools. starts <<<=======")
     need_to_generate_tools = state["need_to_generate_tools"]
@@ -26,6 +29,17 @@ def code_missing_tools(state: State):
             thinking_log.append("I am not allowed to code new tools. ")
             logger.info(
                 f"!!! generate_tools_dynamically is False: tool {name} will not be generated !!!"
+            )
+            continue
+
+        max_tools_generation_per_execution = config.get(
+            "advanced__max_tools_generation_per_execution"
+        )
+        if generated_tools_count >= max_tools_generation_per_execution:
+            thinking_log.append("I reached the limit of tools I can code. ")
+            logger.info(
+                f"!!! generated tools count >= {max_tools_generation_per_execution}: "
+                f"tool {name} will not be generated !!!"
             )
             continue
 
@@ -58,6 +72,7 @@ def code_missing_tools(state: State):
             thinking_log.append(
                 f"I just coded a new ephemeral tool {generated_tool_name}. "
             )
+            generated_tools_count += 1
 
             generated_tools.append(
                 {"name": generated_tool_name, "description": generated_tool_description}
