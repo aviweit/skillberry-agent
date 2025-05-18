@@ -132,8 +132,10 @@ def find_useful_tools(state: State):
 
     find_useful_tools_chain = find_useful_tools_chat_prompt_template | structured_llm
     user_content = state["original_user_prompt"].content
-    logger.info(f"finding useful tools for the user content: {user_content}")
     max_suggested_functions = config.get("max_suggested_functions")
+    logger.info(
+        f"finding up to {max_suggested_functions} useful tools for the user content: {user_content}"
+    )
     response = find_useful_tools_chain.invoke(
         {
             "user_prompt": user_content,
