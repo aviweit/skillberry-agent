@@ -10,7 +10,18 @@ from agents.state import State
 from config.config_ui import config as _config
 from llm.common import llm
 
-from typing import Annotated, Sequence, TypedDict, Union, Dict, Any, Type, Callable, List, Optional
+from typing import (
+    Annotated,
+    Sequence,
+    TypedDict,
+    Union,
+    Dict,
+    Any,
+    Type,
+    Callable,
+    List,
+    Optional,
+)
 from langchain_core.messages import BaseMessage, HumanMessage, SystemMessage
 from langgraph.graph.message import add_messages
 from langchain_core.messages import ToolMessage
@@ -68,12 +79,14 @@ def tool_node(state: ReactToolsCallingAgentState):
         for i in range(len(content), 0, -1):
             try:
                 parsed = json.loads(content[:i])
-                return [{
-                    "type": parsed.get("type", "function"),
-                    "name": parsed.get("name", ""),
-                    "args": parsed.get("parameters", {}),
-                    "id": parsed.get("id", f"{i}"),
-                }]
+                return [
+                    {
+                        "type": parsed.get("type", "function"),
+                        "name": parsed.get("name", ""),
+                        "args": parsed.get("parameters", {}),
+                        "id": parsed.get("id", f"{i}"),
+                    }
+                ]
             except json.JSONDecodeError:
                 continue
         return None
@@ -90,9 +103,7 @@ def tool_node(state: ReactToolsCallingAgentState):
             logging.error(
                 f"tool_node: The tool call was not found in the content: {last_message.content}"
             )
-            thinking_log += (
-                "skipping tool call. "
-            )
+            thinking_log += "skipping tool call. "
             outputs.append(
                 SystemMessage(
                     f"Could not find the tool call in the content: {last_message.content}"
