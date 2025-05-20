@@ -71,17 +71,19 @@ class ReactToolsCallingAgentState(TypedDict):
 
 
 def parse_tool_call_from_content(content: str) -> Optional[List[Dict[str, Any]]]:
-    match = re.search(r'\{.*\}', content)
+    match = re.search(r"\{.*\}", content)
     if not match:
         return None
     try:
         parsed = json.loads(match.group(0))
-        return [{
-            "type": parsed.get("type", "function"),
-            "name": parsed.get("name", ""),
-            "args": parsed.get("parameters", {}),
-            "id": parsed.get("id", "0"),
-        }]
+        return [
+            {
+                "type": parsed.get("type", "function"),
+                "name": parsed.get("name", ""),
+                "args": parsed.get("parameters", {}),
+                "id": parsed.get("id", "0"),
+            }
+        ]
     except json.JSONDecodeError:
         return None
 

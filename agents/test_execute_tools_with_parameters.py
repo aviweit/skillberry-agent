@@ -14,4 +14,3 @@ def test_parse_tool_call_from_content():
     actual = parse_tool_call_from_content(content)
     for key, val in expected.items():
         assert actual[0][key] == val
-
