@@ -1,5 +1,7 @@
 import json
 import logging
+import random
+import re
 
 from langchain_core.language_models import LanguageModelInput
 from langchain_core.prompts import ChatPromptTemplate, MessagesPlaceholder
@@ -68,27 +70,27 @@ class ReactToolsCallingAgentState(TypedDict):
     _llm: LanguageModelInput
 
 
+def parse_tool_call_from_content(content: str) -> Optional[List[Dict[str, Any]]]:
+    match = re.search(r'\{.*\}', content)
+    if not match:
+        return None
+    try:
+        parsed = json.loads(match.group(0))
+        return [{
+            "type": parsed.get("type", "function"),
+            "name": parsed.get("name", ""),
+            "args": parsed.get("parameters", {}),
+            "id": parsed.get("id", "0"),
+        }]
+    except json.JSONDecodeError:
+        return None
+
+
 def tool_node(state: ReactToolsCallingAgentState):
     def get_tool(_tool_name: str):
         for _tool in state["_tools"]:
             if _tool.name == _tool_name:
                 return _tool
-        return None
-
-    def parse_tool_call_from_content(content: str) -> Optional[List[Dict[str, Any]]]:
-        for i in range(len(content), 0, -1):
-            try:
-                parsed = json.loads(content[:i])
-                return [
-                    {
-                        "type": parsed.get("type", "function"),
-                        "name": parsed.get("name", ""),
-                        "args": parsed.get("parameters", {}),
-                        "id": parsed.get("id", f"{i}"),
-                    }
-                ]
-            except json.JSONDecodeError:
-                continue
         return None
 
     outputs = []
