@@ -41,9 +41,11 @@ find_useful_tools_chat_prompt_template = ChatPromptTemplate(
         ),
         (
             "system",
-            "Suggest minimal amount of functions. Focus on deterministic tools. "
+            "Suggest minimal amount of functions. Focus on deterministic tools and specifically. "
+            "Suggest tools that performs structured operations. "
+            "Suggest generic tools that can be used for different contexts. "
             "For example mathematical functions, transformations and conversion functions, "
-            "string manipulation functions, and so on.",
+            "string manipulation functions, and such.",
         ),
         ("system", "Do not suggest tools and functions that performs error handling"),
         (
@@ -56,10 +58,15 @@ find_useful_tools_chat_prompt_template = ChatPromptTemplate(
             "Do not suggest tools and functions that requires access to external services",
         ),
         ("system", "Do not suggest tools and functions that are complicated"),
+        (
+            "system",
+            "Suggest only up to {max_suggested_functions} tools and functions. "
+            "Do not suggest more than {max_suggested_functions} tools and functions.",
+        ),
         ("system", "Response only using json format"),
         (
             "user",
-            "List up to {max_suggested_functions} deterministic tools and functions that helps "
+            "Suggest up to {max_suggested_functions} deterministic tools and functions that helps "
             'to response to the prompt: "{user_prompt}"',
         ),
     ]
