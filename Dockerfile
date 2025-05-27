@@ -4,6 +4,8 @@ FROM python:3.11
 # Define build arguments
 ARG BUILD_VERSION=latest
 ARG BUILD_DATE
+ENV BUILD_VERSION=$BUILD_VERSION
+ENV BUILD_DATE=$BUILD_DATE
 
 # Set the working directory
 WORKDIR /app
