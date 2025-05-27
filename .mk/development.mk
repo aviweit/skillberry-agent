@@ -15,7 +15,21 @@ lint: install_requirements ## Lint the tools-maker
 fix-lint: ## Fix lint issues
 	black agents config fast_api llm tools utils
 
-release: check_rits_key install_requirements  ## Release a new version
+check-git-clean:
+	@if ! git diff-index --quiet HEAD --; then \
+		echo "! You have uncommitted changes. Please commit or stash them before releasing."; \
+		echo "=== Uncommitted changes ==="; \
+		git diff --stat; \
+		exit 1; \
+	fi
+
+check-git-main:
+	@if [ "$(shell git rev-parse --abbrev-ref HEAD)" != "main" ]; then \
+		echo "! You must be on the main branch to run this command"; \
+		exit 1; \
+	fi
+
+release: check_rits_key check-git-main check-git-clean install_requirements  ## Release a new version
 	@if [ -z "$(RELEASE_VERSION)" ]; then \
 		echo "++++++++++++++++++++++++++++++++++++++++++++"; \
   		echo "RELEASE_VERSION is not set. It is required for the release"; \
@@ -24,17 +38,8 @@ release: check_rits_key install_requirements  ## Release a new version
 	exit 1; fi
 
 	@echo "++++++++++++++++++++++++++++++++++++++++++++"
-	@echo "===> Creating release with version: $(RELEASE_VERSION)"
-	@echo "making sure we are on the main branch"
-	@if [ "$(shell git rev-parse --abbrev-ref HEAD)" != "main" ]; then \
-		echo "! You must be on the main branch to create a release"; \
-		exit 1; \
-	fi
-	@echo "making sure we have no uncommitted changes"
-	@if ! git diff-index --quiet HEAD --; then \
-		echo "! You have uncommitted changes. Please commit or stash them before releasing"; \
-		exit 1; \
-	fi
+	@echo "=> Creating release with version: $(RELEASE_VERSION)"
+	@echo "++++++++++++++++++++++++++++++++++++++++++++"
 	@sleep 10
 	@echo "===> Generating git tag $(RELEASE_VERSION) and creating GitHub release"
 	@git tag -a $(RELEASE_VERSION) -m "Release $(RELEASE_VERSION)" && \
@@ -43,4 +48,6 @@ release: check_rits_key install_requirements  ## Release a new version
 
 	@echo "===> Building and pushing new docker image"
 	@make docker_push
-
+	@echo "++++++++++++++++++++++++++++++++++++++++++++"
+	@echo "=> Release $(RELEASE_VERSION) created successfully"
+	@echo "++++++++++++++++++++++++++++++++++++++++++++"
