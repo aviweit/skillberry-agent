@@ -5,7 +5,7 @@ VERSION ?= latest
 test: check_rits_key install_requirements ## Test the tools-agent
 	pytest -s
 
-test-e2e: check_rits_key install_requirements install_dev_requirements ## Test end-to-end the tools agent
+test-e2e: check_rits_key install_requirements ## Test end-to-end the tools agent
 	pytest -s tests/e2e
 
 lint: install_requirements ## Lint the tools-maker
@@ -14,3 +14,33 @@ lint: install_requirements ## Lint the tools-maker
 
 fix-lint: ## Fix lint issues
 	black agents config fast_api llm tools utils
+
+release: check_rits_key install_requirements  ## Release a new version
+	@if [ -z "$(RELEASE_VERSION)" ]; then \
+		echo "++++++++++++++++++++++++++++++++++++++++++++"; \
+  		echo "RELEASE_VERSION is not set. It is required for the release"; \
+  		echo "Please set RELEASE_VERSION and use 'RELEASE_VERSION=<version> make release' "; \
+		echo "++++++++++++++++++++++++++++++++++++++++++++"; \
+	exit 1; fi
+
+	@echo "++++++++++++++++++++++++++++++++++++++++++++"
+	@echo "===> Creating release with version: $(RELEASE_VERSION)"
+	@echo "making sure we are on the main branch"
+	@if [ "$(shell git rev-parse --abbrev-ref HEAD)" != "main" ]; then \
+		echo "! You must be on the main branch to create a release"; \
+		exit 1; \
+	fi
+	@echo "making sure we have no uncommitted changes"
+	@if ! git diff-index --quiet HEAD --; then \
+		echo "! You have uncommitted changes. Please commit or stash them before releasing"; \
+		exit 1; \
+	fi
+	@sleep 10
+	@echo "===> Generating git tag $(RELEASE_VERSION) and creating GitHub release"
+	@git tag -a $(RELEASE_VERSION) -m "Release $(RELEASE_VERSION)" && \
+	git push origin $VERSION && \
+	gh release create $VERSION --generate-notes
+
+	@echo "===> Building and pushing new docker image"
+	@make docker_push
+
