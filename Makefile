@@ -98,10 +98,29 @@ update_git_version:
 check_rits_key:
 	@if [ -z $$RITS_API_KEY ]; then echo "RITS_API_KEY is not set. It is required for the agent service"; exit 1; fi
 
+
+.PHONY: check-rits-watsonx-envs
+check-rits-watsonx-envs:
+	@missing_vars=""; \
+	if [ -z "$$RITS_API_KEY" ]; then \
+		if [ -z "$$WATSONX_APIKEY" ]; then missing_vars="$$missing_vars WATSONX_APIKEY"; fi; \
+		if [ -z "$$WATSONX_PROJECT_ID" ]; then missing_vars="$$missing_vars WATSONX_PROJECT_ID"; fi; \
+		if [ -z "$$WATSONX_URL" ]; then missing_vars="$$missing_vars WATSONX_URL"; fi; \
+		if [ -n "$$missing_vars" ]; then \
+			echo "Missing required environment variables: RITS_API_KEY or ($$missing_vars)"; \
+			exit 1; \
+		else \
+			echo "All WATSONX_* variables are set. Proceeding..."; \
+		fi; \
+	else \
+		echo "RITS_API_KEY is set. Proceeding..."; \
+	fi
+
+
 install_requirements: update_git_version check-venv git_hooks_setup # Install requirements
 	pip install -r requirements.txt
 	
-run: check_rits_key install_requirements  ## Start blueberry tools-agent.
+run: check-rits-watsonx-envs install_requirements  ## Start blueberry tools-agent.
 	python main.py
 
 ##@ Docker
@@ -116,7 +135,7 @@ docker_build: update_git_version ## Build docker image
 docker_run: docker_stop ## Run the docker image privileged
 	@echo "Running Docker container: $(IMAGE_NAME)"
 	-@sudo rm /tmp/tools-agent.log
-	docker run --privileged --name $(IMAGE_NAME) --env-file .env --env RITS_API_KEY \
+	docker run --privileged --name $(IMAGE_NAME) --env-file .env --env RITS_API_KEY --env WATSONX_APIKEY --env WATSONX_PROJECT_ID --env WATSONX_URL \
 		   -d -v /tmp:/tmp -p 7000:7000 \
 		   -p 7001:7001 $(DOCKER_NAME):latest
 

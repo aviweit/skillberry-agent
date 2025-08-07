@@ -13,6 +13,11 @@ CONFIG_STRUCTURE = {
         "default": "http://127.0.0.1:9000",
         "label": "The tools maker url: ",
     },
+    "llm_provider": {
+        "type": "str",
+        "default": "rits_openai",
+        "label": "LLM provider ('rits_openai' or 'watsonx')",
+    },
     "use_rits_proxy": {
         "type": "bool",
         "default": True,

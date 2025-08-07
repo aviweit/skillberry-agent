@@ -7,7 +7,7 @@ from pydantic import BaseModel, Field
 
 from agents.state import State
 from config.config_ui import config
-from llm.common import llm
+from llm.common import current_llm
 from langchain_core.prompts import ChatPromptTemplate
 
 logger = logging.getLogger(__name__)
@@ -130,10 +130,10 @@ def find_useful_tools(state: State):
     thinking_log = []
     logging.info(f"=======>>> find_useful_tools. started <<<=======")
     logger.info("find_useful_tools called")
-    structured_llm = llm.with_structured_output(
+    structured_llm = current_llm.llm.with_structured_output(
         schema=FindingToolsResponseJsonSchema,
         method="function_calling",
-        strict=True,
+        # strict=True,
         include_raw=False,
     )
 

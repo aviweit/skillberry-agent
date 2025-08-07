@@ -10,7 +10,7 @@ from langchain_core.tools import BaseTool
 from agents.remote_tools_wrapper import generate_dynamic_tool
 from agents.state import State
 from config.config_ui import config as _config
-from llm.common import llm
+from llm.common import current_llm
 
 from typing import (
     Annotated,
@@ -257,12 +257,12 @@ def execute_tools_with_parameters(state: State):
                 "I don't have any tools to use. using the LLM model as-is to response. "
             )
             logging.info(f"=====> No tools, not binding")
-            _llm_with_tools = llm
+            _llm_with_tools = current_llm.llm
         else:
             thinking_log += "I will now use the tools and the LLM model to respond. "
             logging.info(f"=====> Binding tools: {_tools}")
-            _llm_with_tools = llm.bind_tools(
-                tools=_tools, tool_choice="auto", strict=True
+            _llm_with_tools = current_llm.llm.bind_tools(
+                tools=_tools, tool_choice="auto"  # , strict=True
             )
     except Exception as e:
         logging.error(f"Error while binding tools: {e}")

@@ -10,7 +10,7 @@ from fast_api.git_version import __git_version__
 from langchain.globals import set_verbose, set_debug
 from langchain.callbacks.tracers import ConsoleCallbackHandler
 
-from llm.common import check_llm_communication
+from llm.common import current_llm
 from tools_agentic_graph import define_tools_agentic_graph
 
 from fast_api.api_server import api_server
@@ -92,7 +92,7 @@ def main():
     config_ui_thread.start()
 
     # make sure we can communicate with the LLM
-    if not check_llm_communication():
+    if not current_llm.check_llm_communication():
         logger.error("Can't communicate with the LLM, please check network, VPN, access keys etc.")
         logging.error("Only the configuration UI is working now, allowing to change the configuration and restart.")
         sleep(100000)

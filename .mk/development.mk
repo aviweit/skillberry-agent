@@ -30,7 +30,7 @@ check-git-main:
 		exit 1; \
 	fi
 
-release: check_rits_key check-git-main check-git-clean install_requirements  ## Release a new version
+release: check-rits-watsonx-envs check-git-main check-git-clean install_requirements  ## Release a new version
 	@if [ -z "$(RELEASE_VERSION)" ]; then \
 		echo "++++++++++++++++++++++++++++++++++++++++++++"; \
   		echo "RELEASE_VERSION is not set. It is required for the release"; \
