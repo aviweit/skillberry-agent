@@ -7,8 +7,8 @@ import threading
 import colorlog
 
 from fast_api.git_version import __git_version__
-from langchain.globals import set_verbose, set_debug
-from langchain.callbacks.tracers import ConsoleCallbackHandler
+from langchain_core.globals import set_verbose, set_debug
+from langchain_core.tracers.stdout import ConsoleCallbackHandler
 
 from llm.common import current_llm
 from tools_agentic_graph import define_tools_agentic_graph
