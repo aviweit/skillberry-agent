@@ -6,12 +6,13 @@ import uvicorn
 import threading
 import colorlog
 
+import os
+
 from fast_api.git_version import __git_version__
 from langchain_core.globals import set_verbose, set_debug
 from langchain_core.tracers.stdout import ConsoleCallbackHandler
 
 from llm.common import current_llm
-from tools_agentic_graph import define_tools_agentic_graph
 
 from fast_api.api_server import api_server
 from config.config_ui import config_ui_app
@@ -21,6 +22,17 @@ from utils.tools_service_api import tools_service
 
 # Initialize logger
 logger = logging.getLogger(__name__)
+
+
+# Load the proper graph based on MCP mode
+BTA_MCP = bool(os.getenv("BTA_MCP"))
+if BTA_MCP:
+    from mcp_tools_agentic_graph import define_mcp_agentic_graph as define_tools_agentic_graph
+    logger.info("BTA MCP: on")
+else:
+    logger.info("BTA MCP: off")
+    from tools_agentic_graph import define_tools_agentic_graph
+
 
 debug = config.get("advanced__debug")
 otel_logging = config.get("advanced__otel_logging")

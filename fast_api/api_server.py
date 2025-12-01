@@ -1,13 +1,27 @@
 import logging
+import os
+import requests
 import time
+from typing import (
+    Annotated,
+    Sequence,
+    TypedDict,
+    Union,
+    Dict,
+    Any,
+    Type,
+    Callable,
+)
 
 from fastapi import FastAPI, HTTPException, Request
 from langchain_core.messages import BaseMessage
 from pydantic import BaseModel, Field
-from fast_api.git_version import __git_version__
-import requests
 
-from tools_agentic_graph import stream_graph_updates
+from fast_api.git_version import __git_version__
+
+from utils.utils import SKILLBERRY_CONTEXT, unflatten_keys
+
+from agents.vmcp_server_manager import vmsm
 
 # Define the API
 api_server = FastAPI(
@@ -17,6 +31,15 @@ api_server = FastAPI(
 )
 
 logger = logging.getLogger(__name__)
+
+
+BTA_MCP = bool(os.getenv("BTA_MCP"))
+if BTA_MCP:
+    from mcp_tools_agentic_graph import stream_graph_updates
+    logger.info("BTA MCP: on")
+else:
+    logger.info("BTA MCP: off")
+    from tools_agentic_graph import stream_graph_updates
 
 
 class ChatMessage(BaseModel):
@@ -59,22 +82,27 @@ def api_prompt(
 @api_server.post("/v1/chat/completions", tags=["chat"])
 def api_chat_completion(chat_request: ChatRequest, request: Request):
 
+    # TODO: BEGIN common skillberry library
     headers = request.headers
-    env_id = headers.get("env_id") 
+    logging.info("!!!!!!!!!!!!!!!!!")
+    logging.info(f"headers: {headers}")
+    logging.info("!!!!!!!!!!!!!!!!!")
 
+    skillberry_context = unflatten_keys(headers).get(SKILLBERRY_CONTEXT.lower())
     logging.info(f"@@@@@@@@@@@@@@@@")
-    logging.info(f"Headers env_id: {env_id}")
+    logging.info(f"skillberery_context: {skillberry_context}")            
     logging.info(f"@@@@@@@@@@@@@@@@")
+    # TODO: END common skillberry library
 
     try:
         chat_history = []
-        for message in chat_request.messages:
-            chat_history.append(message.to_base_message())
+        if chat_request:
+            for message in chat_request.messages:
+                chat_history.append(message.to_base_message())
 
-        last_user_prompt = chat_history[-1]
         response = stream_graph_updates(
-            chat_history=chat_history, original_user_prompt=last_user_prompt,
-            env_id=env_id
+            chat_history=chat_history,
+            skillberry_context=skillberry_context,
         )
         if response is None:
             logging.error("stream_graph_updates returned None")
@@ -130,6 +158,25 @@ def api_chat_completion(chat_request: ChatRequest, request: Request):
     except Exception as e:
         logging.error(f"An error occurred: {e}")
         raise HTTPException(status_code=500, detail=str(e))
+
+
+@api_server.post("/disconnect")
+def disconnect(request: Request):
+    headers = request.headers
+    logging.info("!!!!!!!!!!!!!!!!!")
+    logging.info(f"headers: {headers}")
+    logging.info("!!!!!!!!!!!!!!!!!")
+
+    skillberry_context = unflatten_keys(headers).get(SKILLBERRY_CONTEXT.lower())
+    logging.info(f"@@@@@@@@@@@@@@@@")
+    logging.info(f"skillberery_context: {skillberry_context}")            
+    logging.info(f"@@@@@@@@@@@@@@@@")
+
+    # ignore errors -- in case BTA is in non-mcp mode
+    try:
+        vmsm.remove_server(skillberry_context)
+    except:
+        pass
 
 
 # Health check endpoint

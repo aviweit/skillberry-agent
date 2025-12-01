@@ -1,7 +1,11 @@
 import logging
+from typing import Dict
+
+from config.config_ui import config
+from utils.utils import SKILLBERRY_CONTEXT, flatten_keys
 
 import blueberry_tools_service_sdk
-from config.config_ui import config
+
 
 logger = logging.getLogger(__name__)
 
@@ -17,6 +21,7 @@ class ToolsService:
         configuration = blueberry_tools_service_sdk.Configuration(host=self.base_url)
         with blueberry_tools_service_sdk.ApiClient(configuration) as api_client:
             self.manifest_api = blueberry_tools_service_sdk.ManifestApi(api_client)
+            self.vmcpservers_api = blueberry_tools_service_sdk.VmcpServersApi(api_client)
 
     def get_tools_service_base_url(self):
         """
@@ -88,7 +93,6 @@ class ToolsService:
 
         """
         logger.info(f"execute_tool called for tool: {tool_name}")
-
         response = self.manifest_api.search_manifest_search_manifests_get(
             search_term=f"{tool_description}",  # TODO: search term e.g., f"{tool_name}: {tool_description}"
             max_number_of_results=max_numer_of_results,
@@ -125,6 +129,99 @@ class ToolsService:
         )
         # FIXME: should be const in all places
         return execute_response["return value"]
+
+    def add_vmcp_server(self, name: str, description: str, tools: list,
+                        skillberry_context: Dict = None):
+        """
+        Creates a vmcp server on BTS with given parameters.
+
+        Parameters:
+            name (str): Name of vmcp server
+            description (str): Description of vmcp server
+            tools (list): Tools of vmcp server 
+            skillberry_context (dict): The context to be passed (Optional)
+
+        Returns:
+            dict: Success message with the server name.
+
+        Raises:
+            Exception: Any failure occurred during execution.
+        """
+        logger.info(f"add_vmcp_server called for name: {name}")
+
+        # TODO: use bts sdk
+        import requests
+        headers = {
+            "accept": "application/json",
+            "Content-Type": "application/json"
+        }
+        if skillberry_context:
+            headers.update(
+                flatten_keys(
+                    {
+                        SKILLBERRY_CONTEXT: skillberry_context
+                    }
+                )
+            )
+
+        data = {
+            "name": name,
+            "description": description,
+            "tools": tools
+        }
+        add_vmcp_server_url = f"{self.get_tools_service_base_url()}/vmcp_servers/add"
+        response = requests.post(
+            add_vmcp_server_url, headers=headers, json=data)
+        response.raise_for_status()
+
+    def get_vmcp_server_details(self, name: str):
+        """Get detailed information about a virtual MCP server.
+
+        Retrieves comprehensive details about the specified virtual MCP server,
+        including its configuration, port, and available tools.
+
+        Args:
+            name: The name of the virtual MCP server.
+
+        Returns:
+            dict: Detailed information about the virtual MCP server.
+
+        Raises:
+            Exception: Any failure occurred during execution.
+        """
+        # TODO: use bts sdk
+        import requests
+        headers = {
+            "accept": "application/json",
+            "Content-Type": "application/json"
+        }
+        add_vmcp_server_url = f"{self.get_tools_service_base_url()}/vmcp_servers/{name}"
+        response = requests.get(
+            add_vmcp_server_url, headers=headers)
+        response.raise_for_status()
+        return response.json()
+
+    def remove_vmcp_server(self, name: str):
+        """Remove a virtual MCP server
+
+        Args:
+            name: The name of the virtual MCP server to remove.
+
+        Raises:
+            Exception: Any failure occurred during execution.
+
+        """
+        # TODO: use bts sdk
+        import requests
+        headers = {
+            "accept": "application/json",
+            "Content-Type": "application/json"
+        }
+        remove_vmcp_server_url = f"{self.get_tools_service_base_url()}/vmcp_servers/{name}"
+        response = requests.delete(
+            remove_vmcp_server_url, headers=headers)
+        response.raise_for_status()
+        return response.json()
 
 
 # Load configuration and set up the tools maker API

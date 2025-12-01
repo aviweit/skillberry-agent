@@ -15,17 +15,17 @@ from typing import (
     Optional,
 )
 
-from agents.remote_tools_wrapper import generate_dynamic_tool
+from agents.remote_tools_wrapper import generate_dynamic_tool, TOOLS
 from agents.state import State
 
 from llm.common import current_llm
 from config.config_ui import config as _config
 
 from langchain_core.language_models import LanguageModelInput
-from langchain_core.prompts import ChatPromptTemplate, MessagesPlaceholder
+from langchain_core.prompts import ChatPromptTemplate
 from langchain_core.tools import BaseTool
 
-from langchain_core.messages import BaseMessage, HumanMessage, SystemMessage
+from langchain_core.messages import BaseMessage, SystemMessage
 from langgraph.graph.message import add_messages
 from langchain_core.messages import ToolMessage
 from langchain_core.runnables import RunnableConfig
@@ -234,16 +234,20 @@ def should_continue(state: ReactToolsCallingAgentState):
 
 def all_tools(state: State):
     """
-    Pass all TAu-2 tools to an LLM completion.
+    Defines and compiles a LangGraph workflow for a react-style agent, connecting
+    LLM and tool nodes with conditional logic to control execution flow.
+
+    Note: This method/node selects all TAu-2 tools for LLM completion.
 
     """
     logging.info(f"=======>>> execute_tools_with_parameters. started <<<=======")
     thinking_log = ""
 
     chat_history = state["chat_history"]
+    skillberry_context = state["skillberry_context"]
 
     # Generate the list of tools
-    tools = generate_list_of_tools(state)
+    tools = generate_list_of_tools(skillberry_context)
     try:
         if not tools:
             thinking_log += (
@@ -277,22 +281,13 @@ def all_tools(state: State):
         }
 
 
-########################
-
-    # Use a React tool calling agent
-    # Define a new graph
     workflow = StateGraph(ReactToolsCallingAgentState)
-
-    # Set the entrypoint as `llm`
     workflow.set_entry_point("llm")
 
-    # Define the nodes
     workflow.add_node("llm", call_llm_model_node)
     workflow.add_node("tools", tool_node)
     workflow.add_node("llm_without_tools", call_llm_without_tools_model_node)
 
-
-    # Add edges
     workflow.add_edge("tools", "llm")
     workflow.add_edge("llm_without_tools", END)
     workflow.add_conditional_edges(
@@ -304,11 +299,13 @@ def all_tools(state: State):
         },
     )
 
-    # compile the graph
     react_tools_graph = workflow.compile()
 
-    # Helper function for formatting the stream nicely
     def trace_stream(stream):
+        """
+        Helper function for formatting the stream nicely
+
+        """
         _final_message = None
 
         for s in stream:
@@ -317,15 +314,9 @@ def all_tools(state: State):
             _final_message = message
         return _final_message
 
-
-#######################
-
     original_chat_messages = execute_tools_with_parameters_chat_prompt_template.invoke(
         chat_history
     )
-
-
-# ??????????????????????
 
     try:
         logging.info(f"=====> Invoking the tools react agent")
@@ -385,36 +376,17 @@ def all_tools(state: State):
     return {"messages": messages, "thinking_log": thinking_log}
 
 
-# ??????????????????????
-
-
-def generate_list_of_tools(state: State):
+def generate_list_of_tools(skillberry_context: Dict):
     """
     Translates tau-2 tools into OpenAI callable tools.
 
     """
-    env_id = state["env_id"]
     tools = []
     scope = {}
 
-    for tool_name in [
-        "book_reservation",
-        "get_reservation_details",
-        "calculate",
-        "cancel_reservation",
-        "get_user_details",
-        "list_all_airports",
-        "search_direct_flight",
-        "search_onestop_flight",
-        "send_certificate",
-        "transfer_to_human_agents",
-        "update_reservation_baggages",
-        "update_reservation_flights",
-        "update_reservation_passengers",
-        "get_flight_status"
-    ]:
+    for tool_name in TOOLS:
         try:
-            tool_func = generate_dynamic_tool(dict(name=tool_name), scope, env_id=env_id)
+            tool_func = generate_dynamic_tool(tool_name, scope, skillberry_context=skillberry_context)
             tools.append(tool_func)
         except Exception as e:
             logging.error(
