@@ -1,27 +1,18 @@
 import logging
 import os
-import requests
 import time
-from typing import (
-    Annotated,
-    Sequence,
-    TypedDict,
-    Union,
-    Dict,
-    Any,
-    Type,
-    Callable,
-)
 
+import requests
 from fastapi import FastAPI, HTTPException, Request
-from langchain_core.messages import BaseMessage
 from pydantic import BaseModel, Field
+from typing import Any
+
+from langchain_core.messages import BaseMessage
 
 from fast_api.git_version import __git_version__
-
 from utils.utils import SKILLBERRY_CONTEXT, unflatten_keys
-
 from agents.vmcp_server_manager import vmsm
+
 
 # Define the API
 api_server = FastAPI(
@@ -33,7 +24,7 @@ api_server = FastAPI(
 logger = logging.getLogger(__name__)
 
 
-BTA_MCP = bool(os.getenv("BTA_MCP"))
+BTA_MCP = os.getenv("BTA_MCP", "").strip().lower() in ("1", "true", "yes", "on")
 if BTA_MCP:
     from mcp_tools_agentic_graph import stream_graph_updates
     logger.info("BTA MCP: on")

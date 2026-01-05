@@ -25,7 +25,7 @@ logger = logging.getLogger(__name__)
 
 
 # Load the proper graph based on MCP mode
-BTA_MCP = bool(os.getenv("BTA_MCP"))
+BTA_MCP = os.getenv("BTA_MCP", "").strip().lower() in ("1", "true", "yes", "on")
 if BTA_MCP:
     from mcp_tools_agentic_graph import define_mcp_agentic_graph as define_tools_agentic_graph
     logger.info("BTA MCP: on")

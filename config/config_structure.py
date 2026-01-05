@@ -54,7 +54,7 @@ CONFIG_STRUCTURE = {
         "children": {
             "recursion_limit": {
                 "type": "int",
-                "default": 10,
+                "default": 20,
                 "label": "Maximum number of iterations for the react agent: ",
             },
         },

@@ -1,35 +1,25 @@
+i
 import json
 import logging
-import re
+from typing import Dict
 
-from typing import (
-    Annotated,
-    Sequence,
-    TypedDict,
-    Union,
-    Dict,
-    Any,
-    Type,
-    Callable,
-    List,
-    Optional,
+from config.config_ui import config as _config
+
+from langchain_core.messages import SystemMessage, ToolMessage
+from langchain_core.prompts import ChatPromptTemplate
+from langchain_core.runnables import RunnableConfig
+
+from langgraph.graph import StateGraph, END
+
+from agents.common import (
+    normalize_tool_node,
+    parse_tool_call_from_content,
+    ReactToolsCallingAgentState,
 )
-
 from agents.remote_tools_wrapper import generate_dynamic_tool, TOOLS
 from agents.state import State
 
 from llm.common import current_llm
-from config.config_ui import config as _config
-
-from langchain_core.language_models import LanguageModelInput
-from langchain_core.prompts import ChatPromptTemplate
-from langchain_core.tools import BaseTool
-
-from langchain_core.messages import BaseMessage, SystemMessage
-from langgraph.graph.message import add_messages
-from langchain_core.messages import ToolMessage
-from langchain_core.runnables import RunnableConfig
-from langgraph.graph import StateGraph, END
 
 
 logger = logging.getLogger(__name__)
@@ -58,31 +48,6 @@ execute_tools_with_parameters_chat_prompt_template = ChatPromptTemplate.from_mes
 )
 
 
-class ReactToolsCallingAgentState(TypedDict):
-    messages: Annotated[Sequence[BaseMessage], add_messages]
-    _tools: Sequence[Union[Dict[str, Any], Type, Callable, BaseTool]]
-    _llm: LanguageModelInput
-    _llm_without_tools: LanguageModelInput
-
-
-def parse_tool_call_from_content(content: str) -> Optional[List[Dict[str, Any]]]:
-    match = re.search(r"\{.*\}", content)
-    if not match:
-        return None
-    try:
-        parsed = json.loads(match.group(0))
-        return [
-            {
-                "type": parsed.get("type", "function"),
-                "name": parsed.get("name", ""),
-                "args": parsed.get("parameters", {}),
-                "id": parsed.get("id", "0"),
-            }
-        ]
-    except json.JSONDecodeError:
-        return None
-
-
 def tool_node(state: ReactToolsCallingAgentState):
     def get_tool(_tool_name: str):
         for _tool in state["_tools"]:
@@ -98,21 +63,7 @@ def tool_node(state: ReactToolsCallingAgentState):
     if not last_message.tool_calls:
         # parse the tool call from the content
         tool_calls = parse_tool_call_from_content(last_message.content)
-        if tool_calls is None:
-            logging.error(
-                f"tool_node: The tool call was not found in the content: {last_message.content}"
-            )
-            thinking_log += "skipping tool call. "
-            outputs.append(
-                SystemMessage(
-                    f"Could not find the tool call in the content: {last_message.content}"
-                )
-            )
-            return {"messages": outputs, "thinking_log": thinking_log}
-        else:
-            # Set the .tools_calls  of the last message
-            # to the parsed tool calls
-            last_message.tool_calls = tool_calls
+        assert tool_calls is None, f"last_message.content should not contain tool_call (due to normalize step)"
 
     for tool_call in last_message.tool_calls:
         tool_name = tool_call["name"]
@@ -168,34 +119,28 @@ def tool_node(state: ReactToolsCallingAgentState):
         except Exception as e:
             logging.error(f"tool_node: Error while calling tool {tool_name}: {e}")
             tool_invocation_status = "error"
+            tool_result = ""
 
-        if tool_invocation_status is "success":
-            outputs.append(
-                ToolMessage(
-                    status=tool_invocation_status,
-                    content=tool_result,
-                    artifact=tool_result,
-                    type="tool",
-                    tool_call_id=tool_call["id"],
-                    id=tool_call["id"],
-                )
+        outputs.append(
+            ToolMessage(
+                status=tool_invocation_status,
+                content=tool_result,
+                artifact=tool_result,
+                type="tool",
+                tool_call_id=tool_call["id"],
+                id=tool_call["id"],
             )
+        )
+
+        # Add the appropriate log message
+        if tool_invocation_status == "success":
             thinking_log += f"calling the tool {tool_name} succeeded. "
-        elif tool_invocation_status is "error":
-            outputs.append(
-                ToolMessage(
-                    status=tool_invocation_status,
-                    content=tool_result,
-                    artifact=tool_result,
-                    type="tool",
-                    tool_call_id=tool_call["id"],
-                    id=tool_call["id"],
-                )
-            )
+        elif tool_invocation_status == "error":
             thinking_log += f"calling the tool {tool_name} failed with exception. "
         else:
             thinking_log += f"calling the tool {tool_name} failed. "
 
+    logging.info (f"[WEIT] Exit with: {len(outputs)}")
     return {"messages": outputs, "thinking_log": thinking_log}
 
 
@@ -206,18 +151,25 @@ def call_llm_model_node(state: ReactToolsCallingAgentState, config: RunnableConf
     response = state["_llm"].invoke(state["messages"], config)
     return {"messages": [response]}
 
-def call_llm_without_tools_model_node(state: ReactToolsCallingAgentState, config: RunnableConfig):
-    last_message = state["messages"][-1]
-    logging.info(f"=====> Calling LLM to response (call_llm_without_tools_model_node).")
-    logging.info(f"Latest message is: {last_message}")
-    response = state["_llm_without_tools"].invoke(state["messages"], config)
-    return {"messages": [response]}
 
-def should_continue(state: ReactToolsCallingAgentState):
+def should_continue(state: ReactToolsCallingAgentState) -> str:
+    """
+    Special node to determine whether to continue with calling tools or retuning from the
+    state graph i.e. returning final response to the user.
+ 
+    Args:
+        state (ReactToolsCallingAgentState): the current state of the graph (i.e.
+                                             messages, etc)
+
+    Returns:
+        str: the string to be interpreted by the state graph orchestrator (i.e. "end"
+             or "continue_tool_calls")
+    """
     messages = state["messages"]
     last_message = messages[-1]
     if not last_message.tool_calls:
         # if one of the tool names is found inside the message, skip
+        # TODO (weit): remove this
         for tool in state["_tools"]:
             if tool.name in str(last_message.content):
                 logging.info(f"=====> Tool name was found in the content")
@@ -261,9 +213,7 @@ def all_tools(state: State):
             llm_with_tools = current_llm.llm.bind_tools(
                 tools=tools, tool_choice="auto"
             )
-            
-        llm_without_tools = current_llm.llm.bind_tools(
-            tools=[], tool_choice="none")
+
     except Exception as e:
         logging.error(f"Error while binding tools: {e}")
         return {
@@ -280,18 +230,17 @@ def all_tools(state: State):
             ]
         }
 
-
     workflow = StateGraph(ReactToolsCallingAgentState)
     workflow.set_entry_point("llm")
 
     workflow.add_node("llm", call_llm_model_node)
+    workflow.add_node("normalize", normalize_tool_node)
     workflow.add_node("tools", tool_node)
-    workflow.add_node("llm_without_tools", call_llm_without_tools_model_node)
 
+    workflow.add_edge("llm", "normalize")
     workflow.add_edge("tools", "llm")
-    workflow.add_edge("llm_without_tools", END)
     workflow.add_conditional_edges(
-        "llm",
+        "normalize",
         should_continue,
         {
             "continue_call_tools": "tools",
@@ -327,7 +276,6 @@ def all_tools(state: State):
                     "messages": original_chat_messages.to_messages(),
                     "_tools": tools,
                     "_llm": llm_with_tools,
-                    "_llm_without_tools": llm_without_tools,
                 },
                 {"recursion_limit": recursion_limit, "max_execution_time": 120},
                 stream_mode="values",
@@ -346,7 +294,6 @@ def all_tools(state: State):
                 }
             ]
         }
-
 
     logger.info(
         f"=====> The agentic flow has finished executing the tools with parameters"

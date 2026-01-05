@@ -44,7 +44,6 @@ def stream_graph_updates(chat_history: list[BaseMessage], skillberry_context: Di
     # print("&&&&&&&&&&&&&&&&&&&&&&&&&&&&&")
 
     for event in mcp_tools_agentic_graph.stream({"chat_history": chat_history,
-                                             "messages": chat_history,
                                              "skillberry_context": skillberry_context,
                                              "thinking_log": []}):
         # print("@@@@@@@@@@@@@@@@@@@@@@@@@@@@@")

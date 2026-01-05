@@ -1,29 +1,24 @@
+
 import asyncio
 import json
 import logging
 
-from typing import (
-    Annotated,
-    Sequence,
-    TypedDict,
-)
-
-from langchain_core.language_models import LanguageModelInput
 from langchain_core.prompts import ChatPromptTemplate
-from langchain_core.messages import BaseMessage
 from langchain_core.runnables import RunnableConfig
 
 from langchain_mcp_adapters.client import MultiServerMCPClient
 
 from langgraph.graph import StateGraph
-from langgraph.graph.message import add_messages
 from langgraph.prebuilt import ToolNode, tools_condition
 
+from config.config_ui import config as _config
+
+from agents.common import normalize_tool_node, ReactToolsCallingAgentState
 from agents.remote_tools_wrapper import TOOLS
 from agents.state import State
 from agents.vmcp_server_manager import vmsm
+
 from llm.common import current_llm
-from config.config_ui import config as _config
 from utils.utils import extract_base_url
 
 
@@ -51,11 +46,6 @@ execute_tools_with_parameters_chat_prompt_template = ChatPromptTemplate.from_mes
         ),
     ]
 )
-
-
-class ReactToolsCallingAgentState(TypedDict):
-    messages: Annotated[Sequence[BaseMessage], add_messages]
-    _llm: LanguageModelInput
 
 
 def call_llm_model_node(state: ReactToolsCallingAgentState, config: RunnableConfig):
@@ -106,6 +96,7 @@ def mcp_tools(state: State):
 
     tools = asyncio.run(client.get_tools())
 
+    logging.info (f"MCP TOOLS -=-=-=-=-=-=-=-=-=- {tools} -=-=-=-=-=-=-=-=-=-=-=-=-=-")
     try:
         if not tools:
             thinking_log += (
@@ -138,13 +129,18 @@ def mcp_tools(state: State):
 
     workflow = StateGraph(ReactToolsCallingAgentState)
     workflow.set_entry_point("llm")
+
     workflow.add_node("llm", call_llm_model_node)
+    workflow.add_node("normalize", normalize_tool_node)
     workflow.add_node(ToolNode(tools))
+
+    workflow.add_edge("llm", "normalize")
     workflow.add_edge("tools", "llm")
     workflow.add_conditional_edges(
-        "llm",
+        "normalize",
         tools_condition,
     )
+
     graph = workflow.compile()
 
     async def trace_stream(stream):
@@ -167,9 +163,10 @@ def mcp_tools(state: State):
     try:
         logging.info(f"=====> Invoking the tools react agent")
         recursion_limit = _config.get("tools_react_agent__recursion_limit")
+        llm_messages = original_chat_messages.to_messages()
         final_message = asyncio.run (trace_stream(graph.astream(
             {
-                "messages": original_chat_messages.to_messages(),
+                "messages": llm_messages,
                 "_llm": llm_with_tools
             },
             {
@@ -197,7 +194,7 @@ def mcp_tools(state: State):
     )
     try:
         ai_response = final_message.content
-
+        logging.info (f"final AI response: {final_message.content} given from: {llm_messages}")
         thinking_log += f"I am done. Returning a response to the user."
         session_thinking_log_as_str = ""
         for state_thinking_log in state["thinking_log"]:
