@@ -1,4 +1,3 @@
-i
 import json
 import logging
 from typing import Dict
