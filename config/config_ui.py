@@ -160,45 +160,51 @@ def generate_ui(structure, _config, prefix=""):
     return elements
 
 
-# Layout
-config_ui_app.layout = html.Div(
-    [
-        html.H1(
-            "Configuration Editor",
-            style={"textAlign": "center", "marginBottom": "30px"},
-        ),
-        html.Div(generate_ui(CONFIG_STRUCTURE, config.config)),
-        html.Button(
-            "Save",
-            id="save-btn",
-            style={
-                "padding": "10px 20px",
-                "fontSize": "16px",
-                "cursor": "pointer",
-                "backgroundColor": "#28a745",
-                "color": "white",
-                "border": "none",
-            },
-        ),
-        html.Button(
-            "Restore Defaults",
-            id="restore-btn",
-            style={
-                "padding": "10px 20px",
-                "fontSize": "16px",
-                "cursor": "pointer",
-                "backgroundColor": "#d9534f",
-                "color": "white",
-                "border": "none",
-            },
-        ),
-        html.Div(
-            id="status-msg",
-            style={"textAlign": "center", "marginTop": "20px", "fontSize": "18px"},
-        ),
-    ],
-    style={"padding": "20px"},
-)
+# Layout - Use a function to make it dynamic and reload config on each page load
+def serve_layout():
+    # Reload config from file on each page load
+    config.config = config.load_config()
+    
+    return html.Div(
+        [
+            html.H1(
+                "Configuration Editor",
+                style={"textAlign": "center", "marginBottom": "30px"},
+            ),
+            html.Div(generate_ui(CONFIG_STRUCTURE, config.config)),
+            html.Button(
+                "Save",
+                id="save-btn",
+                style={
+                    "padding": "10px 20px",
+                    "fontSize": "16px",
+                    "cursor": "pointer",
+                    "backgroundColor": "#28a745",
+                    "color": "white",
+                    "border": "none",
+                },
+            ),
+            html.Button(
+                "Restore Defaults",
+                id="restore-btn",
+                style={
+                    "padding": "10px 20px",
+                    "fontSize": "16px",
+                    "cursor": "pointer",
+                    "backgroundColor": "#d9534f",
+                    "color": "white",
+                    "border": "none",
+                },
+            ),
+            html.Div(
+                id="status-msg",
+                style={"textAlign": "center", "marginTop": "20px", "fontSize": "18px"},
+            ),
+        ],
+        style={"padding": "20px"},
+    )
+
+config_ui_app.layout = serve_layout
 
 
 # Helper function to collect only non-group keys
