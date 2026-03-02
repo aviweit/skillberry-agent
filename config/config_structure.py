@@ -8,11 +8,6 @@ CONFIG_STRUCTURE = {
         "default": "http://127.0.0.1:8000",
         "label": "The tools service url: ",
     },
-    "tools_maker_base_url": {
-        "type": "str",
-        "default": "http://127.0.0.1:9000",
-        "label": "The tools maker url: ",
-    },
     "llm_provider": {
         "type": "str",
         "default": "rits_openai",
@@ -64,11 +59,6 @@ CONFIG_STRUCTURE = {
             },
         },
     },
-    "generate_tools_dynamically": {
-        "type": "bool",
-        "default": True,
-        "label": "Generate (code) tools dynamically: ",
-    },
     "advanced": {
         "type": "group",
         "label": "Advanced Settings",
@@ -93,11 +83,6 @@ CONFIG_STRUCTURE = {
                 "type": "int",
                 "default": 5,
                 "label": "Maximum number of tools in the tools shortlisting: ",
-            },
-            "max_tools_generation_per_execution": {
-                "type": "int",
-                "default": 10000,
-                "label": "Maximum number of tools that the agent can generate per execution: ",
             },
         },
     },

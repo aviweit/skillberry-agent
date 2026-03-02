@@ -13,15 +13,12 @@ def find_existing_tools(state: State):
     thinking_log = []
     logging.info(f"=======>>> find_existing_tools. started <<<=======")
     existing_tools = []
-    need_to_generate_tools = []
 
     try:
         for useful_tool in state["useful_tools"]:
             name = useful_tool.name
             description = useful_tool.description
             examples = useful_tool.examples
-            category = useful_tool.category
-            candidate_for_generation = useful_tool.candidate_for_generation
 
             logger.info(f"find_existing_tools called for tool: {name}")
             # issue get request against the url with `search_term` equals to the name of the suggested tool
@@ -49,16 +46,8 @@ def find_existing_tools(state: State):
                     ):
                         existing_tools.append(found_tool)
             else:
-                # Can't find the tools, adding the tools to the list of need_to_generate_tools tools
+                # Can't find the tool
                 logger.info(f"Can't find the useful_tool {name}")
-                if candidate_for_generation:
-                    logger.info(f"Adding {name} to the list of need_to_generate_tools")
-                    need_to_generate_tools.append(useful_tool)
-                else:
-                    logger.info(
-                        f"The tools {name} from category {category} is not candidate for generation, "
-                        f"not adding to the list of need_to_generate_tools"
-                    )
                 continue
     except Exception as e:
         logging.error(f"Error while find_existing_tools: {e}")
@@ -81,6 +70,6 @@ def find_existing_tools(state: State):
     logging.info(f"=======>>> find_existing_tools. ended <<<=======")
     return {
         "existing_tools": existing_tools,
-        "need_to_generate_tools": need_to_generate_tools,
+        "need_to_generate_tools": [],
         "thinking_log": thinking_log,
     }
