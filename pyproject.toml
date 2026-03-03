@@ -1,0 +1,33 @@
+[build-system]
+requires = ["setuptools>=45", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "skillberry-agent"
+version = "0.1.0"
+description = "Skillberry Agent service"
+readme = "README.md"
+requires-python = ">=3.11"
+dependencies = [
+    "fastapi",
+    "uvicorn",
+    "pydantic",
+    "langgraph",
+    "langchain",
+    "langchain-community",
+    "langchain-ibm",
+    "python-dotenv",
+    "httpx",
+    "pytest",
+    "pytest-asyncio",
+]
+
+[project.optional-dependencies]
+dev = [
+    "black",
+    "pytest",
+    "pytest-asyncio",
+]
+
+[tool.setuptools]
+packages = ["agents", "config", "data_model", "fast_api", "llm", "tools", "utils"]
