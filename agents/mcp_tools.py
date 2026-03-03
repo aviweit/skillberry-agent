@@ -193,9 +193,11 @@ def mcp_tools(state: State):
 
     Note: This method/node selects the proper MCP server (using context) for LLM completion.
 
-    If no MCP server is found out from the given context a new MCP server is created and get loaded
-    with Tau2 tools. The MCP server is removed upon "disconnect" control command (once the scenario
-    completes).  
+    If no MCP server is found out from the given context, a new MCP server is created using
+    the skill-based approach. The skill is found by searching the Skillberry Store using
+    "airline" as the search term (matching Tau2 LangChain agent pattern).
+    
+    The MCP server is removed upon "disconnect" control command (once the scenario completes).
 
     """
     logging.info(f"=======>>> Node: mcp_tools. started <<<=======")
@@ -203,31 +205,34 @@ def mcp_tools(state: State):
 
     chat_history = state["chat_history"]
     skillberry_context = state["skillberry_context"]
-    tools_service_base_url = _config.get("tools_service_base_url")
 
     try:
         server = vmsm.get_server(skillberry_context)
+        logging.info(f"Found existing MCP server: {server.name} on port {server.port}")
     except: # not found
-        server = vmsm.add_server(skillberry_context, tools=TOOLS+GENERATED_TOOLS)
+        # Use skill-based approach (similar to Tau2 LangChain agent)
+        # Using "airline" as the search term to find airline-related skills
+        search_term = "airline"
+        
+        logging.info(f"Creating MCP server using skill-based approach with search term: '{search_term}'")
+        server = vmsm.add_server(
+            skillberry_context,
+            skill_search_term=search_term
+        )
 
     port = server.port
-    mcp_client_base_url = f"{extract_base_url(tools_service_base_url)}:{port}"
+    
+    # Get tools from the MCP server and cache them (matching Tau2 pattern)
+    logging.info(f"[MCP DEBUG] Getting MCP tools from port: {port}")
+    from utils.tools_service_api import tools_service
+    tools = tools_service.get_mcp_tools(port=port, server_name=server.name)
+    logging.info(f"[MCP DEBUG] Retrieved {len(tools)} tools from MCP server")
+    for idx, tool in enumerate(tools):
+        tool_name = getattr(tool, "name", "unknown")
+        tool_desc = getattr(tool, "description", "no description")
+        logging.info(f"[MCP DEBUG] Tool {idx+1}: name='{tool_name}', description='{tool_desc}'")
 
-    # 1. Define MCP client
-    client = MultiServerMCPClient(
-        {
-            "tau2-tools": {
-                "url": f"{mcp_client_base_url}/sse",
-                "transport": "sse",
-            }
-        },
-        tool_interceptors=[CustomInterceptor(skillberry_context)],
-    )
-
-    # 2. Retrieve MCP tools
-    tools = asyncio.run(client.get_tools())
-
-    logging.info (f"MCP TOOLS -=-=-=-=-=-=-=-=-=- {tools} -=-=-=-=-=-=-=-=-=-=-=-=-=-")
+    logging.info(f"MCP TOOLS -=-=-=-=-=-=-=-=-=- {tools} -=-=-=-=-=-=-=-=-=-=-=-=-=-")
     try:
         if not tools:
             thinking_log += (

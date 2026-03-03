@@ -5,21 +5,32 @@ build-backend = "setuptools.build_meta"
 [project]
 name = "skillberry-agent"
 version = "0.1.0"
-description = "Skillberry Agent service"
+description = "Skillberry Agent service with Skillberry Store integration"
 readme = "README.md"
 requires-python = ">=3.11"
+# Note: blueberry_tools_service_sdk must be installed separately from:
+# git+ssh://git@github.ibm.com/Blueberry/blueberry-sdk.git#subdirectory=blueberry_tools_service_sdk
 dependencies = [
-    "fastapi",
-    "uvicorn",
-    "pydantic",
-    "langgraph",
-    "langchain",
+    "fastapi>=0.115.12",
+    "uvicorn>=0.16.0",
+    "pydantic>=2.11.3",
+    "langgraph>=0.4.3",
+    "langchain>=0.3.25",
+    "langchain_core>=0.3.59",
     "langchain-community",
-    "langchain-ibm",
+    "langchain_openai>=0.3.16",
+    "langchain_ibm>=0.3.14",
+    "langchain-mcp-adapters>=0.2.1",
     "python-dotenv",
     "httpx",
-    "pytest",
+    "requests>=2.32.3",
+    "pytest>=8.3.4",
     "pytest-asyncio",
+    "colorlog>=6.9.0",
+    "dash>=2.9.3",
+    "Flask>=3.1.0",
+    "ipython>=8.12.3",
+    "typing_extensions>=4.13.2",
 ]
 
 [project.optional-dependencies]
