@@ -1,5 +1,5 @@
 from typing_extensions import TypedDict
-from typing import Annotated, List, Dict, Sequence
+from typing import Annotated, List, Dict, Sequence, Optional
 from langgraph.graph import add_messages
 from langchain_core.messages import HumanMessage, AIMessage, BaseMessage
 
@@ -16,3 +16,6 @@ class State(TypedDict):
     chat_history: list[BaseMessage]
     messages: Annotated[Sequence[BaseMessage], add_messages]
     skillberry_context: Dict[str, str]
+    skill_name: Optional[str]
+    skill_uuid: Optional[str]
+    enable_skill_search: bool

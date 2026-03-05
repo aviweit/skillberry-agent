@@ -2,7 +2,7 @@ import asyncio
 import json
 import logging
 import uuid
-from typing import Any, Dict
+from typing import Any, Dict, Optional
 
 from langchain_core.prompts import ChatPromptTemplate
 from langchain_core.runnables import RunnableConfig
@@ -12,12 +12,12 @@ from langgraph.prebuilt import ToolNode, tools_condition
 from langchain_mcp_adapters.client import MultiServerMCPClient
 
 from agents.common import ReactToolsCallingAgentState, normalize_tool_node
-from agents.remote_tools_wrapper import TOOLS, GENERATED_TOOLS
 from agents.state import State
 from agents.vmcp_server_manager import vmsm
 from agents.trajectory_manager import tracjectory_manager
 from config.config_ui import config as _config
 from data_model.messages import AssistantMessage, ToolCall, ToolMessage
+from data_model.virtual_mcp_server import VirtualMcpServer
 from llm.common import current_llm
 from utils.utils import extract_base_url
 
@@ -172,18 +172,89 @@ class CustomInterceptor:
         """
         assistant_message, tool_call_id = _extract_mcp_request(request)
         tool_name = assistant_message.tool_calls[0].name
-        if tool_name in GENERATED_TOOLS:
-            await pre_hook(self.skillberry_context, assistant_message)
+        # Note: pre_hook logic removed as GENERATED_TOOLS is no longer used
 
         # MCP adapter to perform the call (manages sessions & MCP URI internally)
         result = await handler(request)
 
         tool_message = _extract_mcp_result(result, tool_call_id)
-        if tool_name in GENERATED_TOOLS:
-            await post_hook(self.skillberry_context, tool_message)
+        # Note: post_hook logic removed as GENERATED_TOOLS is no longer used
 
         # Return the original result
         return result
+
+def _create_vmcp_server(skillberry_context: Dict, skill_uuid: Optional[str]) -> VirtualMcpServer:
+    """Create VMCP server with given skill UUID.
+    
+    This function creates a singleton VMCP server.
+
+    Args:
+        skillberry_context: The context for the MCP server
+        skill_uuid: UUID of skill to use, or None for no skill
+        
+    Returns:
+        VirtualMcpServer instance
+        
+    Raises:
+        ValueError: If server exists with different skill_uuid
+    """
+    from utils.skillberry_api import skillberry_api
+    
+    server_name = "proxy-vmcp-server"
+    logging.info(f"Creating VMCP server '{server_name}' with skill_uuid: {skill_uuid}")
+    
+    # Check if server already exists
+    vmcp_server_info = None
+    try:
+        vmcp_server_info = skillberry_api.get_vmcp_server_details(name=server_name)
+        logging.info(f"Found existing VMCP server '{server_name}'")
+        
+        # # Check if existing server has different skill_uuid
+        # existing_skill_uuid = vmcp_server_info.get("skill_uuid")
+        # if existing_skill_uuid and skill_uuid and existing_skill_uuid != skill_uuid:
+        #     raise ValueError(
+        #         f"VMCP server '{server_name}' already exists with skill_uuid '{existing_skill_uuid}', "
+        #         f"but requested skill_uuid is '{skill_uuid}'. "
+        #         f"Please remove the existing server first or use the same skill_uuid."
+        #     )
+        
+        logging.info(f"Reusing existing VMCP server '{server_name}'")
+    except ValueError:
+        # Re-raise ValueError for UUID mismatch
+        raise
+    except Exception as e:
+        logging.debug(f"No existing VMCP server found (or error): {e}")
+        logging.info(f"Will create new VMCP server '{server_name}'")
+    
+    # If server doesn't exist, create it
+    if vmcp_server_info is None:
+        # Create VMCP server
+        vmcp_response = skillberry_api.add_vmcp_server(
+            name=server_name,
+            description="Skillberry MCP Server (singleton)",
+            skill_uuid=skill_uuid,
+            skillberry_context=skillberry_context
+        )
+        logging.info(f"VMCP server created with response: {vmcp_response}")
+        
+        # Get full server details including runtime information
+        vmcp_server_info = skillberry_api.get_vmcp_server_details(name=server_name)
+        logging.info(f"Retrieved VMCP server info: {vmcp_server_info}")
+    
+    # Extract necessary fields for VirtualMcpServer
+    vmcp_data = {
+        "name": vmcp_server_info.get("name") or server_name,
+        "description": vmcp_server_info.get("description") or "Proxy MCP Server",
+        "port": vmcp_server_info.get("port"),
+        "tools": vmcp_server_info.get("runtime", {}).get("tools", [])
+    }
+    logging.info(f"Constructed VMCP data: {vmcp_data}")
+    
+    server = VirtualMcpServer(**vmcp_data)
+    env_id = skillberry_context["env_id"]
+    logger.info(f"Successfully created VMCP server on port {server.port} for env_id {env_id}")
+    
+    return server
 
 
 def mcp_tools(state: State):
@@ -193,9 +264,11 @@ def mcp_tools(state: State):
 
     Note: This method/node selects the proper MCP server (using context) for LLM completion.
 
-    If no MCP server is found out from the given context, a new MCP server is created using
-    the skill-based approach. The skill is found by searching the Skillberry Store using
-    "airline" as the search term (matching Tau2 LangChain agent pattern).
+    The function accepts skill_name, skill_uuid, and enable_skill_search from state:
+    - If skill_uuid is provided, it will be used directly
+    - If skill_name is provided, it will be resolved to skill_uuid
+    - If enable_skill_search is True, runtime skill search will be performed
+    - If none are provided, raises NotImplementedError (fallback logic not yet implemented)
     
     The MCP server is removed upon "disconnect" control command (once the scenario completes).
 
@@ -205,27 +278,52 @@ def mcp_tools(state: State):
 
     chat_history = state["chat_history"]
     skillberry_context = state["skillberry_context"]
+    skill_name = state.get("skill_name", "flight_reservation_management")
+    skill_uuid = state.get("skill_uuid")
+    enable_skill_search = state.get("enable_skill_search", False)
 
-    try:
-        server = vmsm.get_server(skillberry_context)
-        logging.info(f"Found existing MCP server: {server.name} on port {server.port}")
-    except: # not found
-        # Use skill-based approach (similar to Tau2 LangChain agent)
-        # Using "airline" as the search term to find airline-related skills
-        search_term = "airline"
-        
-        logging.info(f"Creating MCP server using skill-based approach with search term: '{search_term}'")
-        server = vmsm.add_server(
-            skillberry_context,
-            skill_search_term=search_term
+    # Determine which skill_uuid to use
+    resolved_skill_uuid = None
+    
+    if skill_uuid:
+        # Direct UUID specification
+        logging.info(f"Using explicit skill UUID: {skill_uuid}")
+        resolved_skill_uuid = skill_uuid
+    elif skill_name:
+        # Resolve skill name to UUID
+        logging.info(f"Resolving skill name '{skill_name}' to UUID")
+        from utils.skillberry_api import skillberry_api
+        skill_data = skillberry_api.get_skill(skill_name)
+        resolved_skill_uuid = skill_data.get("uuid")
+        if not resolved_skill_uuid:
+            raise ValueError(f"Skill '{skill_name}' not found")
+        logging.info(f"Resolved skill '{skill_name}' to UUID: {resolved_skill_uuid}")
+    elif enable_skill_search:
+        # Runtime skill search mode
+        logging.info("Runtime skill search enabled - using domain-based search")
+        search_term = "airline"  # TODO: Extract from messages
+        from utils.skillberry_api import skillberry_api
+        resolved_skill_uuid = skillberry_api.find_skill_uuid_by_search(search_term)
+        if resolved_skill_uuid:
+            logging.info(f"Found skill UUID: {resolved_skill_uuid} for search term: '{search_term}'")
+        else:
+            logging.warning(f"No skill found for search term: '{search_term}'")
+    else:
+        # No skill specification provided
+        raise NotImplementedError(
+            "Fallback logic not implemented. Please provide either skill_name, skill_uuid, or enable_skill_search=True"
         )
+
+    # Get or create singleton server with resolved skill_uuid
+    logging.info(f"Getting/creating singleton MCP server with skill_uuid: {resolved_skill_uuid}")
+    server = _create_vmcp_server(skillberry_context, skill_uuid=resolved_skill_uuid)
 
     port = server.port
     
     # Get tools from the MCP server and cache them (matching Tau2 pattern)
     logging.info(f"[MCP DEBUG] Getting MCP tools from port: {port}")
-    from utils.tools_service_api import tools_service
-    tools = tools_service.get_mcp_tools(port=port, server_name=server.name)
+    from utils.skillberry_api import skillberry_api
+    tools = skillberry_api.get_mcp_tools(port=port, server_name=server.name)
     logging.info(f"[MCP DEBUG] Retrieved {len(tools)} tools from MCP server")
     for idx, tool in enumerate(tools):
         tool_name = getattr(tool, "name", "unknown")

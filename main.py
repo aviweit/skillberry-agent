@@ -17,7 +17,7 @@ from llm.common import current_llm
 from fast_api.api_server import api_server
 from config.config_ui import config_ui_app
 from config.config_ui import config
-from utils.tools_service_api import tools_service
+from utils.skillberry_api import skillberry_api
 
 # Initialize logger
 logger = logging.getLogger(__name__)
@@ -103,14 +103,14 @@ def main():
         logging.error("Only the configuration UI is working now, allowing to change the configuration and restart.")
         sleep(100000)
 
-    # make sure we can communicate with the tools-service
+    # make sure we can communicate with the Skillberry API
     try:
-        tools_service_communication = tools_service.check_communication()
+        skillberry_api_communication = skillberry_api.check_communication()
     except Exception as e:
-        tools_service_communication = False
+        skillberry_api_communication = False
 
-    if not tools_service_communication:
-        logger.error("Can't communicate with the tools-service, please check network, VPN, access keys etc.")
+    if not skillberry_api_communication:
+        logger.error("Can't communicate with the Skillberry API, please check network, VPN, access keys etc.")
         logging.error("Only the configuration UI is working now, allowing to change the configuration and restart.")
         sleep(100000)
 
