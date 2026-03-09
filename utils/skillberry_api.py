@@ -244,12 +244,14 @@ class SkillberryAPI:
         response.raise_for_status()
         return response.json()
 
-    def get_mcp_tools(self, port: int, server_name: str = "skillberry-tools") -> List[Any]:
+    def get_mcp_tools(self, port: int, server_name: str = "skillberry-tools",
+                      tool_interceptors: Optional[List[Any]] = None) -> List[Any]:
         """Get tools from an MCP server via SSE transport.
 
         Args:
             port: The port number where the MCP server is running
             server_name: Name identifier for the MCP server (default: "skillberry-tools")
+            tool_interceptors: Optional list of tool interceptors to use with the MCP client
 
         Returns:
             list: List of tools available from the MCP server
@@ -267,15 +269,19 @@ class SkillberryAPI:
             mcp_server_base_url = f"{extract_base_url(self.base_url)}:{port}"
             logger.info(f"Connecting to MCP server at: {mcp_server_base_url}/sse")
             
-            # Create MCP client
-            client = MultiServerMCPClient(
-                {
-                    server_name: {
-                        "url": f"{mcp_server_base_url}/sse",
-                        "transport": "sse",
-                    }
+            # Build client configuration
+            client_config = {
+                server_name: {
+                    "url": f"{mcp_server_base_url}/sse",
+                    "transport": "sse",
                 }
-            )
+            }
+            
+            # Create MCP client with optional interceptors
+            if tool_interceptors:
+                client = MultiServerMCPClient(client_config, tool_interceptors=tool_interceptors)
+            else:
+                client = MultiServerMCPClient(client_config)
             
             # Get tools from the MCP server
             # Check if we're already in an event loop (e.g., FastAPI context)

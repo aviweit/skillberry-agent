@@ -9,17 +9,13 @@ from langchain_core.runnables import RunnableConfig
 from langgraph.graph import StateGraph
 from langgraph.prebuilt import ToolNode, tools_condition
 
-from langchain_mcp_adapters.client import MultiServerMCPClient
-
 from agents.common import ReactToolsCallingAgentState, normalize_tool_node
 from agents.state import State
-from agents.vmcp_server_manager import vmsm
 from agents.trajectory_manager import tracjectory_manager
 from config.config_ui import config as _config
 from data_model.messages import AssistantMessage, ToolCall, ToolMessage
 from data_model.virtual_mcp_server import VirtualMcpServer
 from llm.common import current_llm
-from utils.utils import extract_base_url
 
 
 logger = logging.getLogger(__name__)
@@ -172,16 +168,32 @@ class CustomInterceptor:
         """
         assistant_message, tool_call_id = _extract_mcp_request(request)
         tool_name = assistant_message.tool_calls[0].name
-        # Note: pre_hook logic removed as GENERATED_TOOLS is no longer used
+        
+        # Always call pre_hook for all tools
+        await pre_hook(self.skillberry_context, assistant_message)
 
         # MCP adapter to perform the call (manages sessions & MCP URI internally)
         result = await handler(request)
 
         tool_message = _extract_mcp_result(result, tool_call_id)
-        # Note: post_hook logic removed as GENERATED_TOOLS is no longer used
+        
+        # Always call post_hook for all tools
+        await post_hook(self.skillberry_context, tool_message)
 
         # Return the original result
         return result
+
+def create_tool_interceptor(skillberry_context: Dict):
+    """Factory function to create a CustomInterceptor with the given context.
+    
+    Args:
+        skillberry_context: The context to pass to the interceptor
+        
+    Returns:
+        CustomInterceptor instance configured with the provided context
+    """
+    return CustomInterceptor(skillberry_context)
+
 
 def _create_vmcp_server(skillberry_context: Dict, skill_uuid: Optional[str]) -> VirtualMcpServer:
     """Create VMCP server with given skill UUID.
@@ -317,6 +329,11 @@ def mcp_tools(state: State):
 
     # Get or create singleton server with resolved skill_uuid
     logging.info(f"Getting/creating singleton MCP server with skill_uuid: {resolved_skill_uuid}")
+
+    # Create the vmcpserver and provide it with the context.
+    # This context is then forwarded to the tools execution environment (the handler() function).
+    # The environment ID (env_id) is propagated throughout the tools’ runtime to ensure that all
+    # operations are performed on the correct environment instance.
     server = _create_vmcp_server(skillberry_context, skill_uuid=resolved_skill_uuid)
 
     port = server.port
@@ -324,7 +341,16 @@ def mcp_tools(state: State):
     # Get tools from the MCP server and cache them (matching Tau2 pattern)
     logging.info(f"[MCP DEBUG] Getting MCP tools from port: {port}")
     from utils.skillberry_api import skillberry_api
-    tools = skillberry_api.get_mcp_tools(port=port, server_name=server.name)
+    
+    # Create tool interceptor with the skillberry context
+    interceptor = create_tool_interceptor(skillberry_context)
+    
+    # Get tools with the interceptor
+    tools = skillberry_api.get_mcp_tools(
+        port=port,
+        server_name=server.name,
+        tool_interceptors=[interceptor]
+    )
     logging.info(f"[MCP DEBUG] Retrieved {len(tools)} tools from MCP server")
     for idx, tool in enumerate(tools):
         tool_name = getattr(tool, "name", "unknown")
@@ -368,36 +394,8 @@ def mcp_tools(state: State):
 
     workflow.add_node("llm", call_llm_model_node)
     workflow.add_node("normalize", normalize_tool_node)
+    workflow.add_node(ToolNode(tools))
     
-    # Wrap ToolNode to convert list-format content to string format for OpenAI compatibility
-    original_tool_node = ToolNode(tools)
-    
-    async def convert_tool_messages_node(state: ReactToolsCallingAgentState) -> Dict[str, Any]:
-        """
-        Convert LangGraph tool message format to OpenAI-compatible format.
-        LangGraph's ToolNode produces content as: [{'text': '...', 'type': 'text'}]
-        OpenAI API expects content as: "..."
-        """
-        # Call original ToolNode asynchronously
-        result = await original_tool_node.ainvoke(state)
-        
-        # Convert message content from list to string
-        messages = result.get("messages", [])
-        for msg in messages:
-            if hasattr(msg, 'content') and isinstance(msg.content, list):
-                # Extract text from list format
-                if msg.content and isinstance(msg.content[0], dict) and 'text' in msg.content[0]:
-                    msg.content = msg.content[0]['text']
-                elif msg.content:
-                    # Fallback: convert entire list to string
-                    msg.content = str(msg.content)
-                else:
-                    msg.content = ""
-        
-        return {"messages": messages}
-    
-    workflow.add_node("tools", convert_tool_messages_node)
-
     workflow.add_edge("llm", "normalize")
     workflow.add_edge("tools", "llm")
     workflow.add_conditional_edges(

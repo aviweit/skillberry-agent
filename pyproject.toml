@@ -8,8 +8,6 @@ version = "0.1.0"
 description = "Skillberry Agent service with Skillberry Store integration"
 readme = "README.md"
 requires-python = ">=3.11"
-# Note: blueberry_tools_service_sdk must be installed separately from:
-# git+ssh://git@github.ibm.com/Blueberry/blueberry-sdk.git#subdirectory=blueberry_tools_service_sdk
 dependencies = [
     "fastapi>=0.115.12",
     "uvicorn>=0.16.0",

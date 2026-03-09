@@ -12,7 +12,6 @@ from langchain_core.messages import BaseMessage
 from fast_api.git_version import __git_version__
 from utils.utils import SKILLBERRY_CONTEXT, unflatten_keys
 from agents.trajectory_manager import tracjectory_manager
-from agents.vmcp_server_manager import vmsm
 
 
 # Define the API
@@ -178,7 +177,10 @@ def disconnect(request: Request):
 
     # ignore errors, also in case BTA is in none-mcp mode
     try:
-        vmsm.remove_server(skillberry_context)
+        from utils.skillberry_api import skillberry_api
+        server_name = "proxy-vmcp-server"
+        logging.info(f"Removing VMCP server '{server_name}'")
+        skillberry_api.remove_vmcp_server(name=server_name)
     except:
         pass
     try:
