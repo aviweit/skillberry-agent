@@ -54,11 +54,12 @@ class ChatRequest(BaseModel):
 @api_server.post("/prompt", tags=["chat"])
 def api_prompt(
     user_prompt: str,
+    request: Request,
 ):
     try:
         user_message = ChatMessage(role="user", content=user_prompt)
         chat_request = ChatRequest(model="API_CALL", messages=[user_message])
-        response = api_chat_completion(chat_request)
+        response = api_chat_completion(chat_request, request)
         return response
     except Exception as e:
         logging.error(f"An error occurred: {e}")

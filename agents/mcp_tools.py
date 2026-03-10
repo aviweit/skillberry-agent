@@ -195,13 +195,13 @@ def create_tool_interceptor(skillberry_context: Dict):
     return CustomInterceptor(skillberry_context)
 
 
-def _create_vmcp_server(skillberry_context: Dict, skill_uuid: Optional[str]) -> VirtualMcpServer:
+def _create_vmcp_server(skillberry_context: Optional[Dict], skill_uuid: Optional[str]) -> VirtualMcpServer:
     """Create VMCP server with given skill UUID.
     
     This function creates a singleton VMCP server.
 
     Args:
-        skillberry_context: The context for the MCP server
+        skillberry_context: The context for the MCP server (can be None)
         skill_uuid: UUID of skill to use, or None for no skill
         
     Returns:
@@ -211,6 +211,11 @@ def _create_vmcp_server(skillberry_context: Dict, skill_uuid: Optional[str]) -> 
         ValueError: If server exists with different skill_uuid
     """
     from utils.skillberry_api import skillberry_api
+
+    # Handle None skillberry_context
+    if skillberry_context is None:
+        logging.warning("skillberry_context is None, using default context")
+        skillberry_context = {"env_id": "default"}
 
     # TODO (weit) hard code
     server_name = "proxy-vmcp-server"
@@ -264,8 +269,8 @@ def _create_vmcp_server(skillberry_context: Dict, skill_uuid: Optional[str]) -> 
     logging.info(f"Constructed VMCP data: {vmcp_data}")
     
     server = VirtualMcpServer(**vmcp_data)
-    env_id = skillberry_context["env_id"]
-    logger.info(f"Successfully created VMCP server on port {server.port} for env_id {env_id}")
+    
+    logger.info(f"Successfully created VMCP server on port {server.port}")
     
     return server
 
