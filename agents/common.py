@@ -36,11 +36,23 @@ def parse_tool_call_from_content(content: str) -> Optional[List[Dict[str, Any]]]
         return None
     try:
         parsed = json.loads(match.group(0))
+        
+        # Support multiple field name variations for backward compatibility
+        # Try "parameters" first (OpenAI standard), then "arguments" (common alternative)
+        args = parsed.get("parameters")
+        if args is None:
+            args = parsed.get("arguments", {})
+        
+        # Support both "name" and "function" fields for tool name
+        name = parsed.get("name")
+        if not name:
+            name = parsed.get("function", "")
+        
         return [
             {
                 "type": parsed.get("type", "function"),
-                "name": parsed.get("name", ""),
-                "args": parsed.get("parameters", {}),
+                "name": name,
+                "args": args,
                 "id": parsed.get("id", "0"),
             }
         ]
