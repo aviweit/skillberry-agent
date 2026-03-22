@@ -10,9 +10,3 @@ This table lists the default LLM configurations, along with the environment vari
 | Watsonx URL               | None              | WATSONX_URL                    | To use IBM WatsonX service as LLM Provider (https://www.ibm.com/products/watsonx) |
 
 > These values are mandatory to be set by setting the corresponding environment variables in your deployment configuration.
-
-This table lists the default MCP related configurations, along with the environment variables that can be used to override them.
-
-| Service Name              | Default value     | Environment Variables Override | Notes
-|---------------------------|-------------------|--------------------------------|-----------------------------------------------------------------------------------|
-| MCP mode                  | False (disabled)  | BTA_MCP                        | Whether MCP (mode-context-protocol) is being used when serving agentic workloads  |

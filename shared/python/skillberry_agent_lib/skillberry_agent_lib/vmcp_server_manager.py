@@ -1,6 +1,9 @@
 from typing import Optional, Dict
 import logging
 import threading
+import time
+
+from skillberry_agent_lib.skillberry_api import skillberry_api
 
 
 # Thread-safe registry for VMCP servers
@@ -10,6 +13,41 @@ _registry_lock = threading.Lock()
 
 # Placeholder value to prevent race conditions during server creation
 _PLACEHOLDER = {"status": "creating"}
+
+def _wait_for_server_creation(env_id: str, max_wait: float = 30.0, poll_interval: float = 0.1) -> Optional[Dict]:
+    """Wait for another thread to finish creating a server.
+    
+    Args:
+        env_id: The environment ID to wait for
+        max_wait: Maximum time to wait in seconds (default: 30)
+        poll_interval: Time between checks in seconds (default: 0.1)
+        
+    Returns:
+        The created server data dict, or None if timeout
+        
+    Raises:
+        TimeoutError: If server creation doesn't complete within max_wait
+    """
+    logging.info(f"Server creation in progress for env_id '{env_id}', waiting...")
+    waited = 0.0
+    
+    while waited < max_wait:
+        time.sleep(poll_interval)
+        waited += poll_interval
+        
+        with _registry_lock:
+            current = _vmcp_server_registry.get(env_id)
+            if current and current.get("status") != "creating":
+                logging.info(f"Server ready for env_id '{env_id}' after {waited:.2f}s")
+                return current
+    
+    # Timeout - clean up placeholder
+    with _registry_lock:
+        if env_id in _vmcp_server_registry and _vmcp_server_registry[env_id].get("status") == "creating":
+            del _vmcp_server_registry[env_id]
+    
+    raise TimeoutError(f"Timeout waiting for server creation for env_id '{env_id}' after {max_wait}s")
+
 
 
 def create_vmcp_server(
@@ -35,8 +73,6 @@ def create_vmcp_server(
     Raises:
         ValueError: If skill resolution fails or server creation fails
     """
-    from skillberry_agent_lib.skillberry_api import skillberry_api
-
     # Handle None skillberry_context
     if skillberry_context is None:
         logging.warning("skillberry_context is None, using default context")
@@ -49,9 +85,9 @@ def create_vmcp_server(
         if env_id in _vmcp_server_registry:
             existing_server = _vmcp_server_registry[env_id]
             
-            # If placeholder, another thread is creating - wait and retry
+            # If placeholder, another thread is creating - wait for it
             if existing_server.get("status") == "creating":
-                logging.info(f"Server creation in progress for env_id '{env_id}', waiting...")
+                return _wait_for_server_creation(env_id)
             else:
                 logging.info(f"Reusing existing VMCP server for env_id '{env_id}'")
                 return existing_server
@@ -184,21 +220,6 @@ def remove_vmcp_server(skillberry_context: Dict) -> bool:
         logging.warning(f"Failed to remove VMCP server '{server_name}' from Tools Service: {e}")
     
     return registry_removed
-
-
-def list_vmcp_servers() -> Dict[str, Dict]:
-    """List all registered VMCP servers.
-    
-    Returns:
-        Dictionary mapping env_id to server data
-    """
-    with _registry_lock:
-        # Return copy to prevent external modification
-        return {
-            env_id: server.copy()
-            for env_id, server in _vmcp_server_registry.items()
-            if server.get("status") != "creating"
-        }
 
 
 def clear_vmcp_servers():

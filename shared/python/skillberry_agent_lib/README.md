@@ -347,7 +347,6 @@ Manage Virtual MCP servers with unified skill resolution:
 ```python
 from skillberry_agent_lib import (
     create_vmcp_server,
-    list_vmcp_servers,
     remove_vmcp_server,
     clear_vmcp_servers,
 )
@@ -369,9 +368,6 @@ server3 = create_vmcp_server(
     skillberry_context=context,
     skill_search_term="weather",  # By search (lowest priority)
 )
-
-# List all servers
-all_servers = list_vmcp_servers()
 
 # Remove specific server (removes from both local registry and Tools Service)
 # Returns True if removed from registry, False if not found

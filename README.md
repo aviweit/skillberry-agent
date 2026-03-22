@@ -14,7 +14,6 @@ An AI agent system that leverages existing tools to accomplish tasks efficiently
 ## Quickstart 🚀
 
 ❗Ensure that the [skillberry-store](https://github.ibm.com/skillberry/skillberry-store) is running.
-❗Make sure you are logged in to the ICR Docker registry. [details here](docs/container-reigistry.md)
 
 ### Run the service with Docker or Podman 🐳
 
