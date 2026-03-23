@@ -8,7 +8,6 @@ import os
 from langchain_core.prompts import ChatPromptTemplate
 
 # Local application imports
-from agents.state import State
 from config.config_ui import config as _config
 from llm.common import current_llm
 from skillberry_agent_lib.data_model.virtual_mcp_server import VirtualMcpServer
@@ -16,11 +15,9 @@ from skillberry_agent_lib.langgraph_nodes import (
     create_react_tools_workflow,
 )
 from skillberry_agent_lib.mcp_interceptor import get_mcp_tools
-from skillberry_agent_lib.skillberry_api import skillberry_api
 from skillberry_agent_lib.skill_manager import resolve_skill_uuid
 from skillberry_agent_lib.trajectory_manager import trajectory_manager
 from skillberry_agent_lib.vmcp_server_manager import get_or_create_vmcp_server, remove_vmcp_server
-
 
 
 logger = logging.getLogger(__name__)

@@ -1,7 +1,6 @@
 import logging
 
 logger = logging.getLogger(__name__)
-# DAVIDBR: TODO: Add placeholder for sequential thinking configuration
 CONFIG_STRUCTURE = {
     "tools_service_base_url": {
         "type": "str",
@@ -68,16 +67,6 @@ CONFIG_STRUCTURE = {
                 "type": "bool",
                 "default": False,
                 "label": "Enable open-telemetry Logging (applicable only when debug is enabled): ",
-            },
-            "similarity_threshold": {
-                "type": "float",
-                "default": 0.5,
-                "label": "Similarity threshold for tools shortlisting: ",
-            },
-            "max_tools_count": {
-                "type": "int",
-                "default": 5,
-                "label": "Maximum number of tools in the tools shortlisting: ",
             },
         },
     },

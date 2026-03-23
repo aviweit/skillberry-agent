@@ -17,7 +17,7 @@ from llm.common import current_llm
 from fast_api.api_server import api_server
 from config.config_ui import config_ui_app
 from config.config_ui import config
-from utils.skillberry_api import skillberry_api
+from skillberry_agent_lib.skillberry_api import skillberry_api
 
 # Initialize logger
 logger = logging.getLogger(__name__)
