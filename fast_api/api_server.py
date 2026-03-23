@@ -1,11 +1,9 @@
 import logging
-import os
 import time
 
 import requests
 from fastapi import FastAPI, HTTPException, Request
 from pydantic import BaseModel, Field
-from typing import Any
 
 from langchain_core.messages import BaseMessage
 
@@ -46,8 +44,6 @@ class ChatRequest(BaseModel):
     max_tokens: int = Field(
         256, gt=0, description="Maximum number of tokens to generate"
     )
-    # Skill parameters removed - now configured via environment variables
-    # Skill resolution uses: SKILL_UUID, SKILL_NAME env vars, or chat history search
 
 
 @api_server.post("/prompt", tags=["chat"])

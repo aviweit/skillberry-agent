@@ -1,6 +1,5 @@
 # Standard library imports
 import asyncio
-import json
 import logging
 import os
 
@@ -82,6 +81,10 @@ def execute_agentic_graph(chat_history: list, skillberry_context: dict):
     """
     logging.info(f"=======>>> execute_agentic_graph started <<<=======")
     thinking_log = ""
+    
+    # Check if think logs should be included in response
+    enable_think_logs = os.environ.get('ENABLE_THINK_LOGS', 'false').lower() in ('true', '1', 'yes')
+    logging.info(f"Think logs enabled: {enable_think_logs}")
 
     # 1. Read skill configuration from environment variables
     env_skill_uuid = os.environ.get('SKILL_UUID')
@@ -198,7 +201,11 @@ def execute_agentic_graph(chat_history: list, skillberry_context: dict):
         logging.info(f"final AI response: {final_message.content} given from: {llm_messages}")
         thinking_log += f"I am done. Returning a response to the user."
         
-        output_content = f"<think>{thinking_log}</think>\n{ai_response}"
+        # Conditionally include think logs based on environment variable
+        if enable_think_logs:
+            output_content = f"<think>{thinking_log}</think>\n{ai_response}"
+        else:
+            output_content = ai_response
     except Exception as e:
         logging.error(f"Error building final response: {e}")
         output_content = "Sorry, failed to answer using skillberry (response building)"

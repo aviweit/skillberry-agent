@@ -38,7 +38,15 @@ The agent uses a three-tier strategy to resolve which skill to use:
    export SKILL_NAME="airline_booking"
    ```
 
-3. **Chat History Search** (Lowest Priority): If neither SKILL_UUID nor SKILL_NAME is set, the agent extracts a search term from the chat history and searches for a matching skill.
-   - Currently returns a hard-coded search term ("airline")
-   - Future enhancement: Intelligent extraction from conversation context
+## Debug and Logging Configuration
+
+These environment variables control debug output and logging behavior.
+
+| Variable Name      | Default value | Type    | Description |
+|-------------------|---------------|---------|-------------|
+| ENABLE_THINK_LOGS | false         | boolean | When set to `true`, includes thinking process logs in AI responses wrapped in `<think>` tags. Useful for debugging and understanding the agent's decision-making process. |
+
+**Accepted Values:**
+- Enable: `true`, `1`, `yes` (case-insensitive)
+- Disable: `false`, `0`, `no`, or unset (case-insensitive)
 
