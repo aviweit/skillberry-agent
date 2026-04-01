@@ -15,19 +15,21 @@ SERVICE_NAME := $(ASSET_NAME)
 SERVICE_PORTS := 7000 7001
 SERVICE_PORT_ROLES := MAIN CONFIG
 SERVICE_HOST := 0.0.0.0
-SERVICE_HAS_SDK := 0
+SERVICE_HAS_SDK := 1
+# If this service container uses persistent mounts, please specify here as pairs of mount:path - separated by space, e.g. /data:/mydata /logs:/tmp/logs
+CNTR_MOUNTS := 
 # ----------------------------------------------------
 
 # Legacy variables for backward compatibility
-PROJECT_NAME := skillberry-agent
-DOCKER_REPOSITORY_NAME ?= us.icr.io/research3
-IMAGE_NAME := blueberry-tools-agent
-VERSION ?= latest
-BUILD_DATE := $(shell date "+%Y-%m-%d %H:%M")
-DOCKER_NAME ?= $(DOCKER_REPOSITORY_NAME)/$(IMAGE_NAME)
-DOCKER_VERSION ?= $(BUILD_VERSION)
-TOOLS_SERVICE_SENTINEL := /tmp/tools-service.pid
-BASE_DIR := $(shell pwd)
+# PROJECT_NAME := skillberry-agent
+# DOCKER_REPOSITORY_NAME ?= us.icr.io/research3
+# IMAGE_NAME := blueberry-tools-agent
+# VERSION ?= latest
+# BUILD_DATE := $(shell date "+%Y-%m-%d %H:%M")
+# DOCKER_NAME ?= $(DOCKER_REPOSITORY_NAME)/$(IMAGE_NAME)
+# DOCKER_VERSION ?= $(BUILD_VERSION)
+# TOOLS_SERVICE_SENTINEL := /tmp/tools-service.pid
+# BASE_DIR := $(shell pwd)
 
 # Python command override (system uses python3)
 PYTHON := python3
