@@ -17,7 +17,7 @@ from llm.common import current_llm
 from fast_api.api_server import api_server
 from config.config_ui import config_ui_app
 from config.config_ui import config
-from skillberry_agent_lib.skillberry_api import skillberry_api
+from skillberry_agent_lib.skillberry_store import skillberry_store
 
 # Initialize logger
 logger = logging.getLogger(__name__)
@@ -104,12 +104,12 @@ def main():
 
     # make sure we can communicate with the Skillberry API
     try:
-        skillberry_api_communication = skillberry_api.check_communication()
+        skillberry_store_communication = skillberry_store.check_communication()
     except Exception as e:
-        skillberry_api_communication = False
+        skillberry_store_communication = False
 
-    if not skillberry_api_communication:
-        logger.error("Can't communicate with the Skillberry API, please check network, VPN, access keys etc.")
+    if not skillberry_store_communication:
+        logger.error("Can't communicate with the Skillberry Store service, please check network, VPN, access keys etc.")
         logging.error("Only the configuration UI is working now, allowing to change the configuration and restart.")
         sleep(100000)
 

@@ -133,7 +133,7 @@ class TestResolveSkillUuidBySearch(unittest.TestCase):
         mock_extract.assert_called_once_with(chat_history)
         mock_api.find_skill_uuid_by_search.assert_called_once_with("airline")
     
-    @patch('skillberry_agent_lib.skill_manager.skillberry_api')
+    @patch('skillberry_agent_lib.skill_manager.skillberry_store')
     @patch('skillberry_agent_lib.skill_manager._extract_search_term_from_chat_history')
     def test_search_based_resolution_no_search_term(self, mock_extract, mock_api):
         """Test search-based resolution when no search term can be extracted."""
@@ -146,7 +146,7 @@ class TestResolveSkillUuidBySearch(unittest.TestCase):
         mock_extract.assert_called_once_with(chat_history)
         mock_api.find_skill_uuid_by_search.assert_not_called()
     
-    @patch('skillberry_agent_lib.skill_manager.skillberry_api')
+    @patch('skillberry_agent_lib.skill_manager.skillberry_store')
     @patch('skillberry_agent_lib.skill_manager._extract_search_term_from_chat_history')
     def test_search_based_resolution_no_skill_found(self, mock_extract, mock_api):
         """Test search-based resolution when no skill is found."""
@@ -160,7 +160,7 @@ class TestResolveSkillUuidBySearch(unittest.TestCase):
         mock_extract.assert_called_once_with(chat_history)
         mock_api.find_skill_uuid_by_search.assert_called_once_with("airline")
     
-    @patch('skillberry_agent_lib.skill_manager.skillberry_api')
+    @patch('skillberry_agent_lib.skill_manager.skillberry_store')
     @patch('skillberry_agent_lib.skill_manager._extract_search_term_from_chat_history')
     def test_search_based_resolution_api_error(self, mock_extract, mock_api):
         """Test search-based resolution when API call fails."""
@@ -197,7 +197,7 @@ class TestResolveSkillUuidNoInput(unittest.TestCase):
 class TestResolveSkillUuidPriorityOrder(unittest.TestCase):
     """Test the priority order of resolution strategies."""
     
-    @patch('skillberry_agent_lib.skill_manager.skillberry_api')
+    @patch('skillberry_agent_lib.skill_manager.skillberry_store')
     @patch('skillberry_agent_lib.skill_manager._extract_search_term_from_chat_history')
     def test_all_three_strategies_uuid_wins(self, mock_extract, mock_api):
         """Test that direct UUID wins when all three strategies are provided."""
@@ -221,7 +221,7 @@ class TestResolveSkillUuidPriorityOrder(unittest.TestCase):
         mock_extract.assert_not_called()
         mock_api.find_skill_uuid_by_search.assert_not_called()
     
-    @patch('skillberry_agent_lib.skill_manager.skillberry_api')
+    @patch('skillberry_agent_lib.skill_manager.skillberry_store')
     @patch('skillberry_agent_lib.skill_manager._extract_search_term_from_chat_history')
     def test_name_and_search_name_wins(self, mock_extract, mock_api):
         """Test that skill name wins over search when both are provided."""
