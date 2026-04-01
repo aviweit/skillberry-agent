@@ -159,6 +159,7 @@ def build_chat_messages(
             break
     
     # Insert MCP prompts before chat_history, or at the end if not found
+    # TODO (weit): make this configurable
     insert_position = chat_history_idx if chat_history_idx is not None else len(base_messages) - 1
     base_messages.insert(insert_position, ("system", mcp_prompts_text))
     
