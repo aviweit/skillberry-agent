@@ -514,15 +514,9 @@ class TestVmcpServerManagerEdgeCases(unittest.TestCase):
         """Clear registry after each test."""
         clear_vmcp_servers()
     
-<<<<<<< HEAD
-    @patch('skillberry_agent_lib.vmcp_server_manager.skillberry_api')
-    def test_missing_runtime_fields(self, mock_api):
-        """Test handling when runtime fields are missing."""
-=======
     @patch('skillberry_agent_lib.vmcp_server_manager.skillberry_store')
     def test_missing_runtime_tools(self, mock_api):
         """Test handling when runtime.tools is missing."""
->>>>>>> 64ebdbb (1. Dropped local requirements - use uv sources in pyproject.toml is the correct way. 2. Replaced REST calls with SDK calls)
         mock_api.get_vmcp_server_details.side_effect = [
             Exception("Not found"),
             {
