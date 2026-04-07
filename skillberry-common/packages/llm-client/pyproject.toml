@@ -18,12 +18,13 @@ keywords = ["llm", "openai", "watsonx", "litellm", "ai", "machine-learning"]
 dependencies = [
     "pydantic>=2.0.0",
     "jsonschema>=4.0.0",
+    "rich>=13.0.0",
 ]
 
 [project.optional-dependencies]
 # LiteLLM provider (default)
 litellm = [
-    "litellm>=1.0.0",
+    "litellm>=1.0.0,<1.82.7",
 ]
 
 # OpenAI provider (includes Azure OpenAI)
@@ -38,17 +39,17 @@ watsonx = [
 
 # RITS provider (uses LiteLLM)
 rits = [
-    "litellm>=1.0.0",
+    "litellm>=1.0.0,<1.82.7",
 ]
 
 # Ollama provider (uses LiteLLM)
 ollama = [
-    "litellm>=1.0.0",
+    "litellm>=1.0.0,<1.82.7",
 ]
 
 # All providers
 all = [
-    "litellm>=1.0.0",
+    "litellm>=1.0.0,<1.82.7",
     "openai>=1.0.0",
     "ibm-watsonx-ai>=1.0.0",
 ]
@@ -63,6 +64,7 @@ dev = [
     "flake8>=6.0.0",
     "mypy>=1.0.0",
     "pre-commit>=3.0.0",
+    "rich>=13.0.0",  # Include Rich in dev by default
 ]
 
 [tool.setuptools.packages.find]

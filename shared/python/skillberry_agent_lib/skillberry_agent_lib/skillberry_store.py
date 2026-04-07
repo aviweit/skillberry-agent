@@ -1,7 +1,11 @@
 import asyncio
 import logging
 from typing import Any, Dict, List, Optional
-import requests
+
+from skillberry_store_sdk import ApiClient, Configuration
+from skillberry_store_sdk.api.skills_api import SkillsApi
+from skillberry_store_sdk.api.vmcp_servers_api import VmcpServersApi
+from skillberry_store_sdk.exceptions import ApiException
 
 from skillberry_agent_lib.utils import SKILLBERRY_CONTEXT, flatten_keys, extract_base_url
 
@@ -9,16 +13,33 @@ from skillberry_agent_lib.utils import SKILLBERRY_CONTEXT, flatten_keys, extract
 logger = logging.getLogger(__name__)
 
 
-class SkillberryAPI:
-    """Client for interacting with the Skillberry Tools Store API."""
+class SkillberryStore:
+    """Client for interacting with the Skillberry Store using the SDK.
+    
+    This class provides the same interface as SkillberryAPI but uses
+    the skillberry-store Python SDK instead of direct REST calls.
+    """
     
     def __init__(self, base_url: Optional[str] = None):
+        """Initialize the Skillberry Store client.
+        
+        Args:
+            base_url: Base URL of the skillberry-store service.
+                     Defaults to http://localhost:8000
+        """
         self.base_url = base_url if base_url else tools_service_base_url
-        self.session = requests.Session()
+        
+        # Initialize SDK configuration
+        self.config = Configuration(host=self.base_url)
+        self.api_client = ApiClient(configuration=self.config)
+        
+        # Initialize API instances
+        self.skills_api = SkillsApi(api_client=self.api_client)
+        self.vmcp_api = VmcpServersApi(api_client=self.api_client)
 
     def check_communication(self):
         """
-        Check connectivity status to the Skillberry API.
+        Check connectivity status to the Skillberry Store.
 
         Returns:
             bool: whether connectivity succeeded
@@ -27,12 +48,14 @@ class SkillberryAPI:
         logger.info("check_communication called")
         try:
             # Try to search for skills as a connectivity test
-            response = self.session.get(f"{self.base_url}/search/skills", params={"search_term": "test", "max_number_of_results": 1})
-            response.raise_for_status()
-            logger.info("Skillberry API is up and running.")
+            self.skills_api.search_skills_search_skills_get(
+                search_term="test",
+                max_number_of_results=1
+            )
+            logger.info("Skillberry Store is up and running.")
             return True
         except Exception as e:
-            logger.error(f"Skillberry API is not reachable: {e}")
+            logger.error(f"Skillberry Store is not reachable: {e}")
             return False
 
     def search_skills(
@@ -57,16 +80,18 @@ class SkillberryAPI:
 
         """
         logger.info(f"search_skills called with search_term: '{search_term}', max_results: {max_number_of_results}, threshold: {similarity_threshold}")
-        params = {
-            "search_term": search_term,
-            "max_number_of_results": max_number_of_results,
-            "similarity_threshold": similarity_threshold,
-        }
-        response = self.session.get(f"{self.base_url}/search/skills", params=params)
-        response.raise_for_status()
-        results = response.json()
-        logger.info(f"search_skills returned {len(results)} results: {results}")
-        return results
+        
+        try:
+            results = self.skills_api.search_skills_search_skills_get(
+                search_term=search_term,
+                max_number_of_results=max_number_of_results,
+                similarity_threshold=similarity_threshold
+            )
+            logger.info(f"search_skills returned {len(results)} results: {results}")
+            return results
+        except ApiException as e:
+            logger.error(f"Error searching skills: {e}")
+            raise Exception(f"Error searching skills: {str(e)}")
 
     def get_skill(self, skill_name: str):
         """
@@ -83,12 +108,15 @@ class SkillberryAPI:
 
         """
         logger.info(f"get_skill called for skill: {skill_name}")
-        response = self.session.get(f"{self.base_url}/skills/{skill_name}")
-        response.raise_for_status()
-        skill_data = response.json()
-        logger.info(f"get_skill returned skill with UUID: {skill_data.get('uuid')}, name: {skill_data.get('name')}")
-        logger.debug(f"Full skill data: {skill_data}")
-        return skill_data
+        
+        try:
+            skill_data = self.skills_api.get_skill_skills_name_get(name=skill_name)
+            logger.info(f"get_skill returned skill with UUID: {skill_data.get('uuid')}, name: {skill_data.get('name')}")
+            logger.debug(f"Full skill data: {skill_data}")
+            return skill_data
+        except ApiException as e:
+            logger.error(f"Error retrieving skill '{skill_name}': {e}")
+            raise Exception(f"Error retrieving skill: {str(e)}")
 
     def find_skill_uuid_by_search(self, search_term: str):
         """
@@ -148,10 +176,8 @@ class SkillberryAPI:
         """
         logger.info(f"add_vmcp_server called for name: {name}, skill_uuid: {skill_uuid}")
 
-        headers = {
-            "accept": "application/json",
-            "Content-Type": "application/json"
-        }
+        # Prepare custom headers for context
+        headers = {}
         if skillberry_context:
             headers.update(
                 flatten_keys(
@@ -161,35 +187,31 @@ class SkillberryAPI:
                 )
             )
 
-        # Build query parameters - ALL parameters are query params, not in body
-        params = {}
-        if name:
-            params["name"] = name
-        if description:
-            params["description"] = description
-        if skill_uuid:
-            params["skill_uuid"] = skill_uuid
-        
-        # Try to create the server
-        response = self.session.post(
-            f"{self.base_url}/vmcp_servers/",
-            headers=headers,
-            params=params
-        )
-        
-        # If server already exists (409 Conflict), get its details instead
-        if response.status_code == 409:
-            logger.info(f"VMCP server '{name}' already exists, retrieving existing server details")
-            try:
-                existing_server = self.get_vmcp_server_details(name=name)
-                logger.info(f"Reusing existing VMCP server: {existing_server}")
-                return existing_server
-            except Exception as e:
-                logger.error(f"Failed to retrieve existing server '{name}': {e}")
-                response.raise_for_status()  # Raise the original 409 error
-        
-        response.raise_for_status()
-        return response.json()
+        try:
+            # Try to create the server using SDK
+            result = self.vmcp_api.create_vmcp_server_vmcp_servers_post(
+                name=name,
+                description=description,
+                skill_uuid=skill_uuid,
+                _headers=headers if headers else None
+            )
+            logger.info(f"VMCP server '{name}' created successfully")
+            return result
+            
+        except ApiException as e:
+            # Handle 409 Conflict - server already exists
+            if e.status == 409:
+                logger.info(f"VMCP server '{name}' already exists, retrieving existing server details")
+                try:
+                    existing_server = self.get_vmcp_server_details(name=name)
+                    logger.info(f"Reusing existing VMCP server: {existing_server}")
+                    return existing_server
+                except Exception as get_error:
+                    logger.error(f"Failed to retrieve existing server '{name}': {get_error}")
+                    raise Exception(f"Server exists but could not retrieve details: {str(get_error)}")
+            else:
+                logger.error(f"Error creating vmcp server '{name}': {e}")
+                raise Exception(f"Error creating vmcp server: {str(e)}")
 
     def get_vmcp_server_details(self, name: str):
         """Get detailed information about a virtual MCP server.
@@ -207,16 +229,13 @@ class SkillberryAPI:
             Exception: Any failure occurred during execution.
         """
         logger.info(f"get_vmcp_server_details called for: {name}")
-        headers = {
-            "accept": "application/json",
-            "Content-Type": "application/json"
-        }
-        response = self.session.get(
-            f"{self.base_url}/vmcp_servers/{name}",
-            headers=headers
-        )
-        response.raise_for_status()
-        return response.json()
+        
+        try:
+            result = self.vmcp_api.get_vmcp_server_vmcp_servers_name_get(name=name)
+            return result
+        except ApiException as e:
+            logger.error(f"Error retrieving vmcp server '{name}': {e}")
+            raise Exception(f"Error retrieving vmcp server: {str(e)}")
 
     def remove_vmcp_server(self, name: str):
         """Remove a virtual MCP server
@@ -232,16 +251,13 @@ class SkillberryAPI:
 
         """
         logger.info(f"remove_vmcp_server called for: {name}")
-        headers = {
-            "accept": "application/json",
-            "Content-Type": "application/json"
-        }
-        response = self.session.delete(
-            f"{self.base_url}/vmcp_servers/{name}",
-            headers=headers
-        )
-        response.raise_for_status()
-        return response.json()
+        
+        try:
+            result = self.vmcp_api.delete_vmcp_server_vmcp_servers_name_delete(name=name)
+            return result
+        except ApiException as e:
+            logger.error(f"Error removing vmcp server '{name}': {e}")
+            raise Exception(f"Error removing vmcp server: {str(e)}")
 
     def get_mcp_tools(self, port: int, server_name: str = "skillberry-tools",
                       tool_interceptors: Optional[List[Any]] = None) -> List[Any]:
@@ -311,7 +327,7 @@ class SkillberryAPI:
             server_name: Name identifier for the MCP server (default: "skillberry-tools")
 
         Returns:
-            list: List of prompt objects available from the MCP server
+            list: List of prompts available from the MCP server
 
         Raises:
             Exception: Any failure occurred during execution.
@@ -320,71 +336,24 @@ class SkillberryAPI:
         logger.info(f"get_mcp_prompts called for port: {port}, server_name: {server_name}")
         
         try:
-            from mcp.client.sse import sse_client
-            from mcp import ClientSession
+            from langchain_mcp_adapters.client import MultiServerMCPClient
             
             # Construct the MCP server URL
             mcp_server_base_url = f"{extract_base_url(self.base_url)}:{port}"
-            mcp_url = f"{mcp_server_base_url}/sse"
-            logger.info(f"Connecting to MCP server at: {mcp_url}")
+            logger.info(f"Connecting to MCP server at: {mcp_server_base_url}/sse")
             
-            # Use asyncio to fetch prompts
-            async def fetch_prompts():
-                prompts_list = []
-                async with sse_client(mcp_url) as (read, write):
-                    async with ClientSession(read, write) as session:
-                        await session.initialize()
-                        
-                        # List available prompts
-                        prompts_result = await session.list_prompts()
-                        if not prompts_result or not prompts_result.prompts:
-                            return []
-                        
-                        # Fetch the actual content for each prompt
-                        for prompt_meta in prompts_result.prompts:
-                            try:
-                                # Get the full prompt content using get_prompt
-                                prompt_result = await session.get_prompt(prompt_meta.name)
-                                if prompt_result and prompt_result.messages:
-                                    # Extract the content from the messages
-                                    for message in prompt_result.messages:
-                                        if hasattr(message, 'content'):
-                                            content = message.content
-                                            # Handle different content types - use getattr to avoid type errors
-                                            description = getattr(content, 'text', None)
-                                            if description is None:
-                                                if isinstance(content, str):
-                                                    description = content
-                                                else:
-                                                    description = str(content)
-                                            
-                                            # Create a prompt object with the actual content
-                                            prompt_obj = type('Prompt', (), {
-                                                'name': prompt_meta.name,
-                                                'description': description
-                                            })()
-                                            prompts_list.append(prompt_obj)
-                                            break  # Use first message content
-                            except Exception as e:
-                                logger.warning(f"Failed to get content for prompt '{prompt_meta.name}': {e}")
-                                # Fallback to using the metadata description if available
-                                if hasattr(prompt_meta, 'description') and prompt_meta.description:
-                                    prompts_list.append(prompt_meta)
-                
-                return prompts_list
+            # Create MCP client
+            client = MultiServerMCPClient(
+                {
+                    server_name: {
+                        "url": f"{mcp_server_base_url}/sse",
+                        "transport": "sse",
+                    }
+                }
+            )
             
-            # Check if we're already in an event loop (e.g., FastAPI context)
-            try:
-                loop = asyncio.get_running_loop()
-                # We're in an async context - run in a thread to avoid event loop conflict
-                import concurrent.futures
-                with concurrent.futures.ThreadPoolExecutor() as executor:
-                    future = executor.submit(asyncio.run, fetch_prompts())
-                    prompts = future.result(timeout=30)  # 30 second timeout
-            except RuntimeError:
-                # No event loop running - safe to use asyncio.run()
-                prompts = asyncio.run(fetch_prompts())
-            
+            # Get prompts from the MCP server
+            prompts = asyncio.run(client.get_prompts())
             logger.info(f"Retrieved {len(prompts)} prompts from MCP server: {[getattr(p, 'name', 'unknown') for p in prompts]}")
             
             return prompts
@@ -396,6 +365,6 @@ class SkillberryAPI:
 
 # TODO (weit): hardcode
 tools_service_base_url = "http://localhost:8000"
-skillberry_api = SkillberryAPI(tools_service_base_url)
+skillberry_store = SkillberryStore(tools_service_base_url)
 
 # Made with Bob

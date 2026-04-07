@@ -1,5 +1,8 @@
 ##@ Docker container management
 
+# Supported container architectures
+SUPPORTED_ARCHS := linux/amd64 linux/arm64
+
 # Docker registry host
 REGISTRY_HOST ?= skillberry-1.vpc.cloud9.ibm.com:8800
 # change DOCKER_PROJECT to "skillberry" for public images
@@ -34,6 +37,9 @@ FULL_IMAGE_NAME = $(REPOSITORY_NAME)/$(IMAGE_NAME)
 
 DOCKER_FILE ?= Dockerfile
 
+# Container volume mounts as docker run args
+VOLUME_FLAGS = $(foreach vol,$(CNTR_MOUNTS),-v $(vol))
+
 
 # Search the shell configuration file to check for aliases
 # This assumes you are using zsh or bash
@@ -64,6 +70,16 @@ DOCKER := podman
 endif
 endif
 
+# Compute DOCKER_ARCH based on the container runtime. Value is docker-specific, e.g., linux/amd64, linux/arm64, etc.
+# If the container runtime is not recognized, the value is set to "unknown"
+ifeq ($(DOCKER),docker)
+DOCKER_ARCH := $(shell docker version --format '{{.Server.Os}}/{{.Server.Arch}}' 2>/dev/null || echo "unknown")
+else ifeq ($(DOCKER),podman)
+DOCKER_ARCH := $(shell podman info --format '{{.Host.OS}}/{{.Host.Arch}}' 2>/dev/null || echo "unknown")
+else
+DOCKER_ARCH := unknown
+endif
+
 # Print the value of DOCKER
 @echo "Using Docker: $(DOCKER)"
 
@@ -73,6 +89,7 @@ endif
 # Check if the user has aliased Docker to Podman in their shell configuration file
 # If the user has aliased Docker to Podman, set the DOCKER variable to podman 
 # If the user has not aliased Docker to Podman, set the DOCKER variable to docker
+.PHONY: docker-check 
 docker-check:
 	@echo "Checking whether Docker or Podman is installed..."
 	@if ! command -v docker > /dev/null && ! command -v podman > /dev/null; then \
@@ -80,29 +97,37 @@ docker-check:
         exit 1; \
     fi
 
-.PHONY: base-image-build 
-base-image-build: docker-check .stamps/base-image-build	## Build skillberry base image
+.PHONY: multiarch-check
+multiarch-check:
+	@echo "Verifying multi-arch container build is enabled and supports: $(SUPPORTED_ARCHS)"
+	@$(SB_COMMON_PATH)/scripts/check-multiarch.sh $(DOCKER) $(SUPPORTED_ARCHS) || exit 1
 
-# Build base image if it does not exist
+.PHONY: base-image-build 
+base-image-build: multiarch-check .stamps/base-image-build	## Build skillberry base image
+
+# Build base multi-arch image if it does not exist
 .stamps/base-image-build: 
-	@echo "Building BASE IMAGE for $(ARCH) using $(DOCKER) version: $(shell $(DOCKER) --version)"
-	@echo "Building BASE IMAGE: $(BASE_IMAGE_FULL_NAME):$(BASE_IMAGE_TAG)"
+	@echo "Building Base Image using $(DOCKER) version: $(shell $(DOCKER) --version)"
+	@echo "Supported Architectures: $(SUPPORTED_ARCHS)"
+	@echo "Base Image Name: $(BASE_IMAGE_FULL_NAME):$(BASE_IMAGE_TAG)"
 	@echo "Using ROOT IMAGE: $(ROOT_IMAGE)"
 	@if [ "$(DOCKER)" = "docker" ]; then \
 		DOCKER_BUILDKIT=1 $(DOCKER) buildx build \
 		--file $(BASE_DOCKER_FILE) \
-		--load \
+		--platform $(call to_csv,$(SUPPORTED_ARCHS)) \
 		--build-arg ROOT_IMAGE=$(ROOT_IMAGE) \
 		-t $(BASE_IMAGE_FULL_NAME):$(BASE_IMAGE_TAG) \
-		.; \
+		. \
+		|| exit 1; \
 		touch .stamps/base-image-build; \
 	elif [ "$(DOCKER)" = "podman" ]; then \
 		$(DOCKER) build --no-cache=true \
 		--file $(BASE_DOCKER_FILE) \
-		--load \
+		--platform $(call to_csv,$(SUPPORTED_ARCHS)) \
 		--build-arg ROOT_IMAGE=$(ROOT_IMAGE) \
+		--manifest $(BASE_IMAGE_FULL_NAME):$(BASE_IMAGE_TAG) \
 		-t $(BASE_IMAGE_FULL_NAME):$(BASE_IMAGE_TAG) \
-		.; \
+		. || exit 1; \
 		touch .stamps/base-image-build; \
     else \
 		echo "Unsupported Docker version: $(DOCKER)"; \
@@ -124,19 +149,20 @@ base-image-rm: docker-check ## Remove the local base image
 	rm -f .stamps/base-image-build
 
 .PHONY: docker-build 
-docker-build: docker-check update-git-version ssh-agent .stamps/docker-build	## Build service in docker image
+docker-build: docker-check update-git-version .stamps/docker-build	## Build service in docker image
 
 # We actually build a new image only if the code changed by checking code-scan stamp
-.stamps/docker-build: .stamps/code-scan
-	@echo "Building for $(ARCH) using $(DOCKER) version: $(shell $(DOCKER) --version)"
+.stamps/docker-build: .stamps/ssh-agent.env .stamps/code-scan
+	@echo "Building for $(DOCKER_ARCH) using $(DOCKER) version: $(shell $(DOCKER) --version)"
 	@echo "Building Docker image: $(FULL_IMAGE_NAME):$(IMAGE_TAG)"
 	@echo "Build version: $(BUILD_VERSION)"
 	@echo "Build date: $(BUILD_DATE)"
-	@echo "Building for $(ARCH) using the Docker file $(DOCKER_FILE): $(FULL_IMAGE_NAME):$(IMAGE_TAG)"
-	@if [ "$(DOCKER)" = "docker" ]; then \
+	@echo "Building using the Docker file: $(DOCKER_FILE)"
+	@. .stamps/ssh-agent.env; \
+	if [ "$(DOCKER)" = "docker" ]; then \
 		DOCKER_BUILDKIT=1 $(DOCKER) buildx build \
 		--file $(DOCKER_FILE) \
-		--load \
+		--platform $(DOCKER_ARCH) \
 		--build-arg BASE_IMAGE_FULL_NAME=$(BASE_IMAGE_FULL_NAME) \
 		--build-arg BASE_IMAGE_TAG=$(BASE_IMAGE_TAG) \
 		--build-arg BUILD_VERSION=$(BUILD_VERSION) \
@@ -145,6 +171,7 @@ docker-build: docker-check update-git-version ssh-agent .stamps/docker-build	## 
 		--build-arg SERVICE_PORTS="$(SERVICE_PORTS)" \
 		--build-arg SERVICE_ENTRY_MODULE="$(SERVICE_ENTRY_MODULE)" \
 		--ssh default=$$SSH_AUTH_SOCK \
+		$(VOLUME_FLAGS) \
 		-t $(FULL_IMAGE_NAME):$(IMAGE_TAG) \
 		-t $(FULL_IMAGE_NAME):latest \
 		. || exit 1; \
@@ -152,6 +179,7 @@ docker-build: docker-check update-git-version ssh-agent .stamps/docker-build	## 
 	elif [ "$(DOCKER)" = "podman" ]; then \
 		$(DOCKER) build --no-cache=true \
 		--file $(DOCKER_FILE) \
+		--platform $(DOCKER_ARCH) \
 		--build-arg BASE_IMAGE_FULL_NAME=$(BASE_IMAGE_FULL_NAME) \
 		--build-arg BASE_IMAGE_TAG=$(BASE_IMAGE_TAG) \
 		--build-arg BUILD_VERSION=$(BUILD_VERSION) \
@@ -160,6 +188,7 @@ docker-build: docker-check update-git-version ssh-agent .stamps/docker-build	## 
 		--build-arg SERVICE_PORTS="$(SERVICE_PORTS)" \
 		--build-arg SERVICE_ENTRY_MODULE="$(SERVICE_ENTRY_MODULE)" \
 		--ssh default=$$SSH_AUTH_SOCK \
+		$(VOLUME_FLAGS) \
 		-t $(FULL_IMAGE_NAME):$(IMAGE_TAG) \
 		-t $(FULL_IMAGE_NAME):latest \
 		. || exit 1; \

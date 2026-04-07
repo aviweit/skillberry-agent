@@ -22,6 +22,10 @@ dependencies = [
     "dash>=2.9.3",
     "Flask>=3.1.0",
     "ipython>=8.12.3",
+    "skillberry-agent-lib",
+    "skillberry-store-sdk @ git+ssh://git@github.ibm.com/skillberry/skillberry-store.git#subdirectory=client/python/skillberry_store_sdk",
+   "openapi-generator-cli[jdk4py]==7.20.0",
+    "toml-cli"
 ]
 
 [project.optional-dependencies]
@@ -30,6 +34,11 @@ dev = [
     "pytest",
     "pytest-asyncio",
 ]
+
+[tool.uv.sources]
+#skillberry-store-sdk = { path = "../skillberry-store/client/python/skillberry_store_sdk", editable = true }
+skillberry-agent-lib = { path = "shared/python/skillberry_agent_lib", editable = true }
+llm-client = { path = "skillberry-common/packages/llm-client", editable = true }
 
 [tool.setuptools]
 packages = ["agents", "config", "fast_api", "llm", "tools", "utils"]

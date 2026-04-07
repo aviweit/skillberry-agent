@@ -1,5 +1,12 @@
 .DEFAULT_GOAL := help
 
+# function for converting space-separated list to comma-separated list
+empty :=
+space := $(empty) $(empty)
+comma := ,
+to_csv = $(subst $(space),$(comma),$(strip $1))
+
+
 ARCH := $(shell uname -m)
 OS := $(shell uname -s)
 
@@ -92,10 +99,6 @@ endif
 
 BUILD_DATE := $(shell date +%Y-%m-%d\ %H:%M)
 
-ifeq ($(ARCH), arm64)
-	DOCKER_FILE := Dockerfile-$(ARCH)
-endif
-
 .PHONY: help
 help: ## Display this help.
 	@python $(SB_COMMON_PATH)/scripts/make-help.py $(MAKEFILE_LIST)
@@ -129,9 +132,17 @@ check-rits-watsonx-envs:
 	fi
 
 .PHONY: ssh-agent
-ssh-agent:
+ssh-agent: .stamps/ssh-agent.env
+
+.stamps/ssh-agent.env:
 	@if [ -z "$$SSH_AUTH_SOCK" ]; then \
-		eval $$(ssh-agent -s); \
-		ssh-add $(SSH_KEY); \
-	fi
+		echo "Starting SSH agent"; \
+		ssh-agent -s > .stamps/ssh-agent.env; \
+	else \
+		echo "Capturing running SSH agent"; \
+		echo "SSH_AUTH_SOCK=$$SSH_AUTH_SOCK" > .stamps/ssh-agent.env; \
+	fi 
+	@. .stamps/ssh-agent.env; \
+	ssh-add $(SSH_KEY); 
+
 
