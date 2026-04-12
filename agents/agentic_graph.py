@@ -2,8 +2,12 @@
 import asyncio
 import logging
 import os
+from typing import Any, Dict
 
 # Third-party imports
+from langchain_core.tools import StructuredTool
+from pydantic import create_model, Field
+
 # Local application imports
 from config.config_ui import config as _config
 from llm.common import current_llm
@@ -12,36 +16,113 @@ from skillberry_agent_lib.langgraph_nodes import (
     create_react_tools_workflow,
 )
 from skillberry_agent_lib.mcp_interceptor import get_mcp_tools
-from skillberry_agent_lib.prompt import (
-    build_chat_messages,
-)
+from skillberry_agent_lib.prompt import build_chat_messages
 from skillberry_agent_lib.skill_manager import resolve_skill_uuid
 from skillberry_agent_lib.trajectory_manager import trajectory_manager
+from skillberry_agent_lib.utils import log_tools_info
 from skillberry_agent_lib.vmcp_server_manager import get_or_create_vmcp_server, remove_vmcp_server
 
 
 logger = logging.getLogger(__name__)
 
 
-def execute_agentic_graph(chat_history: list, skillberry_context: dict):
+def convert_openai_tool_to_langchain(tool_dict: Dict[str, Any]) -> Any:
     """
-    Execute agentic workflow with MCP tools.
+    Convert an OpenAI format tool to a LangChain StructuredTool.
+    
+    Args:
+        tool_dict: Tool in OpenAI format with structure:
+            {
+                "type": "function",
+                "function": {
+                    "name": "tool_name",
+                    "description": "tool description",
+                    "parameters": {...json schema...}
+                }
+            }
+    
+    Returns:
+        LangChain StructuredTool object
+    """
+    function_def = tool_dict.get("function", {})
+    tool_name = function_def.get("name", "unknown_tool")
+    tool_description = function_def.get("description", "")
+    parameters = function_def.get("parameters", {})
+    
+    # Create a Pydantic model from the JSON schema
+    properties = parameters.get("properties", {})
+    required = parameters.get("required", [])
+    
+    # Build field definitions for the Pydantic model
+    field_definitions = {}
+    for prop_name, prop_schema in properties.items():
+        prop_type = prop_schema.get("type", "string")
+        prop_description = prop_schema.get("description", "")
+        is_required = prop_name in required
+        
+        # Map JSON schema types to Python types
+        type_mapping = {
+            "string": str,
+            "number": float,
+            "integer": int,
+            "boolean": bool,
+            "array": list,
+            "object": dict,
+        }
+        python_type = type_mapping.get(prop_type, str)
+        
+        # Create field with optional/required handling
+        if is_required:
+            field_definitions[prop_name] = (python_type, Field(..., description=prop_description))
+        else:
+            field_definitions[prop_name] = (python_type, Field(None, description=prop_description))
+    
+    # Create the Pydantic model dynamically
+    if field_definitions:
+        ArgsModel = create_model(f"{tool_name}Args", **field_definitions)
+    else:
+        # Empty model if no parameters
+        ArgsModel = create_model(f"{tool_name}Args")
+    
+    # Create a dummy function that will never be called
+    # (the actual execution happens through agents's tool system)
+    def dummy_func(**kwargs):
+        """This function is never called - tools are executed by the agent system"""
+        raise NotImplementedError(f"Tool {tool_name} should be executed by the agent system")
+    
+    # Create the StructuredTool
+    langchain_tool = StructuredTool(
+        name=tool_name,
+        description=tool_description,
+        func=dummy_func,
+        args_schema=ArgsModel
+    )
+    
+    return langchain_tool
+
+
+def execute_agentic_graph(chat_messages: list, skillberry_context: dict, agent_tools: list | None = None):
+    """
+    Execute agentic workflow with MCP tools and optional chat request tools.
     
     Environment Variables:
         SKILL_UUID: Direct skill UUID (optional, highest priority)
         SKILL_NAME: Skill name to resolve (optional, medium priority)
         ENABLE_THINK_LOGS: Include thinking logs in response (default: false)
+        USE_AGENT_TOOLS: Enable/disable agent tools from chat request (default: true)
+    
+    Configuration:
+        mcp_prompts_position: Position of MCP prompts - 'prefix' or 'postfix' (default: prefix)
     
     This function orchestrates the complete agentic workflow:
-    1. Read skill configuration from environment variables
-    2. Resolve skill UUID using multiple strategies
-    3. Create or get VMCP server with resolved skill
-    4. Get tools from the MCP server with interceptor
-    5. Bind tools to LLM
-    6. Create and compile the React workflow
-    7. Prepare chat messages with MCP prompts injection
-    8. Invoke the graph and stream results
-    9. Build final response
+    1. Resolve skill UUID using multiple strategies
+    2. Create or get VMCP server with resolved skill
+    3. Get tools from the MCP server with interceptor
+    4. Bind tools to LLM
+    5. Create and compile the React workflow
+    6. Prepare chat messages with MCP prompts injection
+    7. Invoke the graph and stream results
+    8. Build final response
     
     Skill Resolution Strategy:
     - SKILL_UUID env var: Direct skill UUID (highest priority)
@@ -52,8 +133,9 @@ def execute_agentic_graph(chat_history: list, skillberry_context: dict):
     Use the disconnect() function to clean up the server when the session ends.
     
     Parameters:
-        chat_history: List of chat messages providing conversation context
+        chat_messages: List of chat messages providing conversation context
         skillberry_context: Context dictionary containing env_id and other metadata (must not be None)
+        chat_request_tools: Optional list of chat request tools in OpenAI format to bind alongside MCP tools
     
     Returns:
         str: The final AI response content
@@ -72,22 +154,28 @@ def execute_agentic_graph(chat_history: list, skillberry_context: dict):
     enable_think_logs = os.environ.get('ENABLE_THINK_LOGS', 'false').lower() in ('true', '1', 'yes')
     logging.info(f"Think logs enabled: {enable_think_logs}")
 
-    # 1. Read skill configuration from environment variables
     env_skill_uuid = os.environ.get('SKILL_UUID')
     env_skill_name = os.environ.get('SKILL_NAME')
     
+    # Check if agent tools should be included
+    use_agent_tools = os.environ.get('USE_AGENT_TOOLS', 'true').lower() in ('true', '1', 'yes')
+    if not use_agent_tools and agent_tools:
+        logging.info(f"Agent tools disabled by USE_AGENT_TOOLS environment variable - ignoring tools from request")
+        agent_tools = None
+    logging.info(f"Use agent tools: {use_agent_tools}")
+    
     logging.info(f"Environment: SKILL_UUID={env_skill_uuid}, SKILL_NAME={env_skill_name}")
     
-    # 2. Resolve skill UUID using multiple strategies
+    # 1. Resolve skill UUID using multiple strategies
     resolved_skill_uuid = resolve_skill_uuid(
         skill_uuid=env_skill_uuid,
         skill_name=env_skill_name,
-        chat_history=chat_history
+        chat_history=chat_messages
     )
     
     logging.info(f"Resolved skill UUID: {resolved_skill_uuid}")
     
-    # 3. Create or get VMCP server with resolved skill
+    # 2. Create or get VMCP server with resolved skill
     try:
         vmcp_data = get_or_create_vmcp_server(
             skillberry_context,
@@ -101,7 +189,7 @@ def execute_agentic_graph(chat_history: list, skillberry_context: dict):
     server = VirtualMcpServer(**vmcp_data)
     port = server.port
     
-    # 4. Get tools from the MCP server with interceptor
+    # 3. Get tools from the MCP server with interceptor
     tools = get_mcp_tools(
         port=port,
         server_name=server.name,
@@ -109,76 +197,109 @@ def execute_agentic_graph(chat_history: list, skillberry_context: dict):
     )
 
     logging.info(f"MCP TOOLS -=-=-=-=-=-=-=-=-=- {tools} -=-=-=-=-=-=-=-=-=-=-=-=-=-")
+    if not tools:
+        logging.warning(f"=====> WARNING: No tools retrieved from MCP server!")
+    logging.info(f"MCP TOOLS COUNT: {len(tools)}")
     
-    # 5. Bind tools to LLM
+    # 3.5. Prepare tools for binding - keep everything in LangChain format
+    all_tools = []
+    agent_executable_tool_names = []  # Track tools that should be executed by the agent (not by workflow)
+    # Start with MCP tools (already in LangChain format)
+    if tools:
+        logging.info(f"=====> Using {len(tools)} MCP tools")
+        all_tools.extend(tools)
+    
+    
+    # Convert chat request tools from OpenAI format to LangChain format
+    if agent_tools:
+        logging.info(f"=====> Converting {len(agent_tools)} chat request tools from OpenAI to LangChain format")
+        for tool_dict in agent_tools:
+            try:
+                langchain_tool = convert_openai_tool_to_langchain(tool_dict)
+                all_tools.append(langchain_tool)
+                agent_executable_tool_names.append(langchain_tool.name)  # Mark as agent-executable
+                logging.info(f"=====> Converted chat request tool: {langchain_tool.name} (agent-executable)")
+            except Exception as e:
+                tool_name = tool_dict.get('function', {}).get('name', 'unknown')
+                logging.error(f"=====> Failed to convert tool {tool_name}: {e}")
+    
+    logging.info(f"=====> Total tools for binding: {len(all_tools)}")
+    logging.info(f"=====> Agent-executable tools (must be executed by the agent): {agent_executable_tool_names}")
+    
+    # 4. Bind tools to LLM
     try:
-        if not tools:
+        if not all_tools:
             thinking_log += (
                 "I don't have any tools to use. using the LLM model as-is to response. "
             )
             logging.info(f"=====> No tools, not binding")
+            logging.info(f"=====> WARNING: LLM will NOT be able to call tools - it will only generate text responses")
             llm_with_tools = current_llm.llm
         else:
             thinking_log += "I will now use the tools and the LLM model to respond. "
-            logging.info(f"=====> Binding tools: {tools}")
+            logging.info(f"=====> Binding {len(all_tools)} tools to LLM")
+            log_tools_info(all_tools, prefix="=====>")
             llm_with_tools = current_llm.llm.bind_tools(
-                tools=tools, tool_choice="auto"
+                tools=all_tools, tool_choice="auto"
             )
+            logging.info(f"=====> Tools successfully bound to LLM")
 
     except Exception as e:
         logging.error(f"Error while binding tools: {e}")
         return "Sorry, failed to answer using skillberry (tools binding)"
 
-    # 6. Create and compile the React workflow
+    # 5. Create and compile the React workflow with all tools (all in LangChain format)
     workflow = create_react_tools_workflow(
-        tools=tools,
+        tools=all_tools,
         enable_tool_logging=False,
         normalize_anthropic_to_openai=True,
+        agent_executable_tool_names=agent_executable_tool_names,  # Pass agent-executable tools
     )
 
     graph = workflow.compile()
 
-    async def trace_stream(stream):
-        """
-        Helper function for formatting the stream nicely
-
-        """
-        _final_message = None
-
-        async for s in stream:
-            message = s["messages"][-1]
-            logging.info(message)
-            _final_message = message
-        return _final_message
-
-    # 7. Prepare chat messages with MCP prompts injection
-    original_chat_messages = build_chat_messages(
-        chat_history=chat_history,
+    # 6. Prepare chat messages with MCP prompts injection
+    logging.info(f"=====> Preparing chat messages with MCP prompts injection")
+    mcp_prompts_position = str(_config.get('mcp_prompts_position', 'prefix'))
+    llm_messages = build_chat_messages(
+        chat_history=chat_messages,
         mcp_port=port,
         mcp_server_name=server.name,
-        skillberry_context=skillberry_context
+        skillberry_context=skillberry_context,
+        mcp_prompts_position=mcp_prompts_position
     )
-    
-    llm_messages = original_chat_messages.to_messages()
 
-    # 8. Invoke the graph and stream results
+    # 7. Invoke the graph and stream results
     try:
         logging.info(f"=====> Invoking the tools react agent")
-        logging.info(f"Chat history has {len(chat_history)} messages")
+        logging.info(f"Chat history has {len(chat_messages)} messages")
         logging.info(f"LLM messages prepared: {len(llm_messages)} messages")
         recursion_limit = _config.get("tools_react_agent__recursion_limit")
+        
+        # Log all messages being passed to the graph
+        logging.info(f"Number of messages being passed to graph: {len(llm_messages)}")
+        for i, msg in enumerate(llm_messages):
+            logging.info(f"Message {i+1}: type={type(msg).__name__}, role={getattr(msg, 'type', 'N/A')}, content_preview={str(msg.content)[:100]}...")
 
-        final_message = asyncio.run(trace_stream(graph.astream(
-            {
-                "messages": llm_messages,
-                "llm": llm_with_tools
-            },
-            {
-                "recursion_limit": recursion_limit,
-                "max_execution_time": 120
-            },
-            stream_mode="values",
-        )))
+        # Stream results and capture final message
+        async def process_stream():
+            final_message = None
+            async for s in graph.astream(
+                {
+                    "messages": llm_messages,
+                    "llm": llm_with_tools
+                },
+                {
+                    "recursion_limit": recursion_limit,
+                    "max_execution_time": 120
+                },
+                stream_mode="values",
+            ):
+                message = s["messages"][-1]
+                final_message = message
+            return final_message
+        
+        final_message = asyncio.run(process_stream())
     except Exception as e:
         logging.error(f"Error while streaming to the react agent: {e}")
         return "Sorry, failed to answer using skillberry (invoke react agent)"
@@ -187,25 +308,34 @@ def execute_agentic_graph(chat_history: list, skillberry_context: dict):
         f"=====> The agentic flow has finished executing the tools with parameters"
     )
 
-    # 9. Build final response
+    # 8. Build final response
     try:
-        ai_response = final_message.content
-        logging.info(f"final AI response: {final_message.content} given from: {llm_messages}")
-        thinking_log += f"I am done. Returning a response to the user."
-        
-        # Conditionally include think logs based on environment variable
-        if enable_think_logs:
-            output_content = f"<think>{thinking_log}</think>\n{ai_response}"
+        # Check if final_message has tool_calls that need to be executed by the agent
+        if hasattr(final_message, 'tool_calls') and final_message.tool_calls:
+            logging.info(f"final AI response has {len(final_message.tool_calls)} tool calls - returning AIMessage for the agent to execute")
+            logging.info(f"Tool calls: {[tc.get('name') for tc in final_message.tool_calls]}")
+            # Return the AIMessage object so tool_calls are preserved
+            return final_message
         else:
-            output_content = ai_response
+            # No tool calls - return content as string (legacy behavior)
+            ai_response = final_message.content
+            logging.info(f"final AI response: {final_message.content} given from: {llm_messages}")
+            thinking_log += f"I am done. Returning a response to the user."
+            
+            # Conditionally include think logs based on environment variable
+            if enable_think_logs:
+                output_content = f"<think>{thinking_log}</think>\n{ai_response}"
+            else:
+                output_content = ai_response
+            
+            logger.info(f"output_content: {output_content}")
+            logging.info(f"=======>>> execute_agentic_graph ended <<<=======")
+            return output_content
     except Exception as e:
         logging.error(f"Error building final response: {e}")
         output_content = "Sorry, failed to answer using skillberry (response building)"
-
-    logger.info(f"output_content: {output_content}")
-    logging.info(f"=======>>> execute_agentic_graph ended <<<=======")
-    
-    return output_content
+        logging.info(f"=======>>> execute_agentic_graph ended <<<=======")
+        return output_content
 
 
 def trajectory(skillberry_context: dict) -> list:

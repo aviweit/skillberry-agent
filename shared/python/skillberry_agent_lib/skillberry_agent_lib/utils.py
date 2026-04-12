@@ -7,6 +7,33 @@ logger = logging.getLogger(__name__)
 
 # TODO: common skillberry library
 
+
+def log_tools_info(
+    tools: list,
+    prefix: str = "",
+    include_description: bool = False,
+    log_level: int = logging.INFO
+) -> None:
+    """
+    Log information about a list of tools.
+    
+    Args:
+        tools: List of tool objects to log
+        prefix: Optional prefix for log messages (e.g., "=====>", "[MCP DEBUG]")
+        include_description: Whether to include tool descriptions in the log
+        log_level: Logging level to use (default: logging.INFO)
+    """
+    for idx, tool in enumerate(tools):
+        tool_name = getattr(tool, 'name', 'unknown')
+        
+        if include_description:
+            tool_desc = getattr(tool, 'description', 'no description')
+            message = f"{prefix} Tool {idx+1}: name='{tool_name}', description='{tool_desc}'"
+        else:
+            message = f"{prefix} Tool {idx+1}: {tool_name}"
+        
+        logger.log(log_level, message.strip())
+
 SKILLBERRY_CONTEXT = "skillberry-context"
 
 

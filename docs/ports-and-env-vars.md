@@ -38,6 +38,18 @@ The agent uses a three-tier strategy to resolve which skill to use:
    export SKILL_NAME="airline_booking"
    ```
 
+## Agent Tools Configuration
+
+These environment variables control agent tool behavior.
+
+| Variable Name      | Default value | Type    | Description |
+|-------------------|---------------|---------|-------------|
+| USE_AGENT_TOOLS   | true          | boolean | When set to `true`, enables the use of tools provided in chat requests within the agentic workflow. When `false`, tools from requests are ignored. |
+
+**Accepted Values:**
+- Enable: `true`, `1`, `yes` (case-insensitive)
+- Disable: `false`, `0`, `no` (case-insensitive)
+
 ## Debug and Logging Configuration
 
 These environment variables control debug output and logging behavior.

@@ -1,3 +1,7 @@
+from typing import Any, Optional, List, Dict
+import json
+import uuid
+
 import logging
 import time
 
@@ -5,10 +9,12 @@ import requests
 from fastapi import FastAPI, HTTPException, Request
 from pydantic import BaseModel, Field
 
-from langchain_core.messages import BaseMessage
+from langchain_core.messages import HumanMessage, AIMessage, SystemMessage
 
 from fast_api.git_version import __git_version__
 from utils.utils import SKILLBERRY_CONTEXT, unflatten_keys
+from llm.common import current_llm
+from config.config_ui import config
 # Define the API
 api_server = FastAPI(
     title="Skillberry Tools Agent",
@@ -33,7 +39,27 @@ class ChatMessage(BaseModel):
 
     # to BaseMessage
     def to_base_message(self):
-        return BaseMessage(content=self.content, type=self.role)
+        if self.role == "user":
+            return HumanMessage(content=self.content)
+        elif self.role == "assistant":
+            return AIMessage(content=self.content)
+        elif self.role == "system":
+            return SystemMessage(content=self.content)
+        else:
+            # Fallback for unknown roles
+            return HumanMessage(content=self.content)
+
+
+# Tool definition models
+class ToolFunction(BaseModel):
+    name: str = Field(..., description="Function name")
+    description: Optional[str] = Field(None, description="Function description")
+    parameters: Optional[Dict[str, Any]] = Field(None, description="Function parameters schema")
+
+
+class Tool(BaseModel):
+    type: str = Field("function", description="Tool type, typically 'function'")
+    function: ToolFunction = Field(..., description="Function definition")
 
 
 # Prompt request data model
@@ -42,8 +68,99 @@ class ChatRequest(BaseModel):
     messages: list[ChatMessage] = Field(..., description="List of messages for context")
     temperature: float = Field(0.7, ge=0, le=2, description="Sampling temperature")
     max_tokens: int = Field(
-        256, gt=0, description="Maximum number of tokens to generate"
+        8192, gt=0, description="Maximum number of tokens to generate"
     )
+    tools: Optional[List[Tool]] = Field(None, description="List of tools/functions available to the model")
+    tool_choice: Optional[str] = Field("auto", description="Tool choice strategy: 'auto', 'none', or specific tool name")
+
+
+# Helper functions for tool handling
+def convert_tools_for_binding(tools: List[Tool]) -> List[Dict[str, Any]]:
+    """
+    Convert Pydantic Tool models to LangChain-compatible format.
+    
+    Args:
+        tools: List of Tool objects from the request
+        
+    Returns:
+        List of tool dictionaries in OpenAI format
+    """
+    tools_for_binding = []
+    for tool in tools:
+        tool_dict = {
+            "type": "function",
+            "function": {
+                "name": tool.function.name,
+                "description": tool.function.description or "",
+                "parameters": tool.function.parameters or {}
+            }
+        }
+        tools_for_binding.append(tool_dict)
+    
+    logging.info(f"Converted {len(tools_for_binding)} tools for binding")
+    logging.info(f"Tool names: {[t['function']['name'] for t in tools_for_binding]}")
+    
+    return tools_for_binding
+
+
+def build_response_with_tool_calls(llm_response: Any, bypass_mode: bool = False) -> Dict[str, Any]:
+    """
+    Build OpenAI-compatible response with proper tool call handling.
+    
+    Args:
+        llm_response: Response from LLM (AIMessage or string)
+        bypass_mode: Whether this is from bypass mode (for logging purposes)
+        
+    Returns:
+        Dictionary with properly formatted message and finish_reason
+    """
+    # Check if response is an AIMessage object (has content attribute)
+    if hasattr(llm_response, 'content'):
+        # AIMessage object - extract content and tool_calls
+        mode_str = "bypass mode" if bypass_mode else "agentic workflow"
+        logging.info(f"Processing {mode_str} AIMessage response")
+        
+        message_dict = {
+            "role": "assistant",
+            "content": llm_response.content or "",
+        }
+        
+        # Add tool_calls if present
+        if hasattr(llm_response, 'tool_calls') and llm_response.tool_calls:
+            logging.info(f"Adding {len(llm_response.tool_calls)} tool calls to response")
+            message_dict["tool_calls"] = []
+            
+            for tool_call in llm_response.tool_calls:
+                # Convert LangChain tool call format to OpenAI format
+                tool_call_dict = {
+                    "id": tool_call.get("id", f"call_{int(time.time())}"),
+                    "type": "function",
+                    "function": {
+                        "name": tool_call.get("name", ""),
+                        "arguments": json.dumps(tool_call.get("args", {}))  # Must be valid JSON string
+                    }
+                }
+                message_dict["tool_calls"].append(tool_call_dict)
+                logging.info(f"Tool call {tool_call.get('name')}: arguments={json.dumps(tool_call.get('args', {}))[:100]}")
+            
+            finish_reason = "tool_calls"
+        else:
+            finish_reason = "stop"
+        
+        logging.info(f"Response content length: {len(message_dict['content'])}, finish_reason: {finish_reason}")
+    else:
+        # String response (legacy agentic workflow format)
+        message_dict = {
+            "role": "assistant",
+            "content": str(llm_response),
+        }
+        finish_reason = "stop"
+        logging.info(f"Processing string response: {str(llm_response)[:100]}...")
+    
+    return {
+        "message": message_dict,
+        "finish_reason": finish_reason
+    }
 
 
 @api_server.post("/prompt", tags=["chat"])
@@ -64,12 +181,14 @@ def api_prompt(
 @api_server.post("/chat/completions", tags=["chat"])
 @api_server.post("/v1/chat/completions", tags=["chat"])
 def api_chat_completion(chat_request: ChatRequest, request: Request):
+    # Log the incoming ChatRequest
+    logger.info(f"ChatRequest received - model: {chat_request.model}, temperature: {chat_request.temperature}, max_tokens: {chat_request.max_tokens}, messages count: {len(chat_request.messages)}")
+    logger.debug(f"ChatRequest full details: {chat_request.model_dump()}")
 
-    # TODO: BEGIN common skillberry library
     headers = request.headers
-    logging.info("!!!!!!!!!!!!!!!!!")
-    logging.info(f"headers: {headers}")
-    logging.info("!!!!!!!!!!!!!!!!!")
+    logging.debug("=" * 80)
+    logging.debug(f"[REQUEST HEADERS] {headers}")
+    logging.debug("=" * 80)
 
     skillberry_context = unflatten_keys(headers).get(SKILLBERRY_CONTEXT.lower())
     
@@ -81,21 +200,73 @@ def api_chat_completion(chat_request: ChatRequest, request: Request):
         logging.warning("Skillberry context missing env_id, adding default")
         skillberry_context["env_id"] = "default"
     
-    logging.info(f"@@@@@@@@@@@@@@@@")
-    logging.info(f"skillberery_context: {skillberry_context}")
-    logging.info(f"@@@@@@@@@@@@@@@@")
-    # TODO: END common skillberry library
+    logging.debug("=" * 80)
+    logging.debug(f"[SKILLBERRY CONTEXT] {skillberry_context}")
+    logging.debug("=" * 80)
 
     try:
-        chat_history = []
+        chat_messages = []
         if chat_request:
             for message in chat_request.messages:
-                chat_history.append(message.to_base_message())
+                logging.debug(f"chat_messages to append: {message}")
+                chat_messages.append(message.to_base_message())
 
-        final_response = execute_agentic_graph(
-            chat_history=chat_history,
-            skillberry_context=skillberry_context
-        )
+        # Check if bypass is enabled
+        bypass_enabled = config.get("bypass_agentic_workflow")
+        
+        if bypass_enabled:
+            logging.info("Bypass enabled - calling LLM directly")
+            
+            # Check if tools are provided in the request
+            if chat_request.tools:
+                logging.info(f"Tools provided in request: {len(chat_request.tools)} tools")
+                
+                # Convert tools using helper function
+                tools_for_binding = convert_tools_for_binding(chat_request.tools)
+                
+                # Bind tools to LLM
+                try:
+                    llm_with_tools = current_llm.llm.bind_tools(
+                        tools=tools_for_binding,
+                        tool_choice=chat_request.tool_choice or "auto"
+                    )
+                    logging.info("Tools bound to LLM successfully")
+                    
+                    # Call LLM with tools
+                    llm_response = llm_with_tools.invoke(chat_messages)
+                    
+                    # Check if response has tool calls
+                    has_tool_calls = hasattr(llm_response, 'tool_calls') and len(llm_response.tool_calls) > 0
+                    logging.info(f"LLM response received with tool calls: {has_tool_calls}")
+                    
+                    if has_tool_calls:
+                        logging.info(f"Tool calls: {llm_response.tool_calls}")
+                    
+                    # Store the full response for proper handling below
+                    final_response = llm_response
+                except Exception as e:
+                    logging.error(f"Error binding or invoking tools: {e}")
+                    raise
+            else:
+                logging.info("No tools provided - calling LLM without tools")
+                # Call LLM directly without tools
+                llm_response = current_llm.llm.invoke(chat_messages)
+                final_response = llm_response
+        else:
+            # Use the normal agentic workflow with chat request tools
+            logging.info("Executing agentic workflow")
+            
+            # Convert tools if provided
+            chat_request_tools = None
+            if chat_request.tools:
+                logging.info(f"Tools provided in request for agentic workflow: {len(chat_request.tools)} tools")
+                chat_request_tools = convert_tools_for_binding(chat_request.tools)
+            
+            final_response: str | Any = execute_agentic_graph(
+                chat_messages=chat_messages,
+                skillberry_context=skillberry_context,
+                agent_tools=chat_request_tools
+            )
         
         if final_response is None:
             logging.error("execute_agentic_graph returned None")
@@ -104,37 +275,35 @@ def api_chat_completion(chat_request: ChatRequest, request: Request):
                 detail="Internal server error: execute_agentic_graph returned None",
             )
 
-        logging.info(f"The response to the user prompt is: {final_response}")
+        # Handle response using helper function
+        # Bypass mode returns AIMessage, agentic workflow returns string
+        response_data = build_response_with_tool_calls(
+            final_response,
+            bypass_mode=bypass_enabled
+        )
+        message_dict = response_data["message"]
+        finish_reason = response_data["finish_reason"]
 
+        # Generate unique ID for each response
+        response_id = f"chatcmpl-{uuid.uuid4().hex[:24]}"
+        
         response = {
-            "id": "skillberry",
+            "id": response_id,
             "object": "chat.completion",
             "created": int(time.time()),
             "model": "skillberry",
             "choices": [
                 {
                     "index": 0,
-                    "message": {
-                        "role": "assistant",
-                        "content": final_response,
-                        "refusal": None,
-                    },
-                    "logprobs": None,
-                    "finish_reason": "stop",
+                    "message": message_dict,
+                    "finish_reason": finish_reason,
                 }
             ],
             "usage": {
                 "prompt_tokens": 1,
                 "completion_tokens": 1,
-                "total_tokens": 1,
-                "prompt_tokens_details": {"cached_tokens": 0},
-                "completion_tokens_details": {
-                    "reasoning_tokens": 0,
-                    "accepted_prediction_tokens": 0,
-                    "rejected_prediction_tokens": 0,
-                },
+                "total_tokens": 2,
             },
-            "system_fingerprint": "skillberry",
         }
 
         return response
@@ -148,9 +317,9 @@ def api_chat_completion(chat_request: ChatRequest, request: Request):
 @api_server.get("/trajectory")
 def get_trajectory(request: Request):
     headers = request.headers
-    logging.info("!!!!!!!!!!!!!!!!!")
-    logging.info(f"headers: {headers}")
-    logging.info("!!!!!!!!!!!!!!!!!")
+    logging.debug("=" * 80)
+    logging.debug(f"[REQUEST HEADERS] {headers}")
+    logging.debug("=" * 80)
 
     skillberry_context = unflatten_keys(headers).get(SKILLBERRY_CONTEXT.lower())
     
@@ -161,9 +330,9 @@ def get_trajectory(request: Request):
     elif "env_id" not in skillberry_context:
         skillberry_context["env_id"] = "default"
     
-    logging.info(f"@@@@@@@@@@@@@@@@")
-    logging.info(f"skillberery_context: {skillberry_context}")
-    logging.info(f"@@@@@@@@@@@@@@@@")
+    logging.debug("=" * 80)
+    logging.debug(f"[SKILLBERRY CONTEXT] {skillberry_context}")
+    logging.debug("=" * 80)
     
     trajectory_result = trajectory(skillberry_context)
     return {"trajectory": trajectory_result}
@@ -172,9 +341,9 @@ def get_trajectory(request: Request):
 @api_server.post("/disconnect")
 def api_disconnect(request: Request):
     headers = request.headers
-    logging.info("!!!!!!!!!!!!!!!!!")
-    logging.info(f"headers: {headers}")
-    logging.info("!!!!!!!!!!!!!!!!!")
+    logging.debug("=" * 80)
+    logging.debug(f"[REQUEST HEADERS] {headers}")
+    logging.debug("=" * 80)
 
     skillberry_context = unflatten_keys(headers).get(SKILLBERRY_CONTEXT.lower())
     
@@ -185,9 +354,9 @@ def api_disconnect(request: Request):
     elif "env_id" not in skillberry_context:
         skillberry_context["env_id"] = "default"
     
-    logging.info(f"@@@@@@@@@@@@@@@@")
-    logging.info(f"skillberery_context: {skillberry_context}")
-    logging.info(f"@@@@@@@@@@@@@@@@")
+    logging.debug("=" * 80)
+    logging.debug(f"[SKILLBERRY CONTEXT] {skillberry_context}")
+    logging.debug("=" * 80)
 
     # Delegate to agentic_graph disconnect function
     # ignore errors, also in case BTA is in none-mcp mode

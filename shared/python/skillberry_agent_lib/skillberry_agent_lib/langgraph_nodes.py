@@ -66,6 +66,11 @@ def parse_tool_call_from_content(content: str) -> Optional[List[Dict[str, Any]]]
         if not name:
             name = parsed.get("function", "")
         
+        # Validate that we have a non-empty function name
+        if not name:
+            logger.warning(f"parse_tool_call_from_content: no valid function name found in parsed content: {parsed}")
+            return None
+        
         return [
             {
                 "type": parsed.get("type", "function"),
@@ -159,6 +164,16 @@ def normalize_tool_node(state: ReactToolsCallingAgentState) -> Dict[str, Any]:
 
     logger.info(f"ENTER normalize_tool_node with message type: {type(last_message)}")
     logger.info(f"normalize_tool_node message content: {content[:200] if content else 'empty'}...")
+    logger.info(f"normalize_tool_node tool_calls value: {tool_calls}")
+    logger.info(f"normalize_tool_node tool_calls type: {type(tool_calls)}")
+    logger.info(f"normalize_tool_node tool_calls bool evaluation: {bool(tool_calls)}")
+    
+    # Log the full message attributes for debugging
+    logger.info(f"normalize_tool_node last_message attributes: {dir(last_message)}")
+    if hasattr(last_message, 'additional_kwargs'):
+        logger.info(f"normalize_tool_node additional_kwargs: {last_message.additional_kwargs}")
+    if hasattr(last_message, 'response_metadata'):
+        logger.info(f"normalize_tool_node response_metadata: {last_message.response_metadata}")
 
     # Could either be None or []
     if not tool_calls:
@@ -218,7 +233,32 @@ def call_llm_model_node(
         logger.info(f"Normalizing Anthropic content to OpenAI format before LLM invocation")
         messages = normalize_anthropic_content_to_openai(messages)
 
+    # Log all messages being passed to the LLM
+    logger.info(f"Number of messages being passed to LLM: {len(messages)}")
+    for i, msg in enumerate(messages):
+        logger.info(f"Message {i+1}: type={type(msg).__name__}, role={getattr(msg, 'type', 'N/A')}, content_preview={str(msg.content)[:100]}...")
+
+
     response = state["llm"].invoke(messages, config)
+    
+    # Log the LLM response details
+    logger.info(f"=====> LLM response received (call_llm_model_node)")
+    logger.info(f"Response type: {type(response)}")
+    logger.info(f"Response content: {getattr(response, 'content', 'no content')[:500]}...")
+    logger.info(f"Response has tool_calls attribute: {hasattr(response, 'tool_calls')}")
+    if hasattr(response, 'tool_calls'):
+        tool_calls = getattr(response, 'tool_calls', None)
+        logger.info(f"Response tool_calls value: {tool_calls}")
+        logger.info(f"Response tool_calls type: {type(tool_calls)}")
+        logger.info(f"Response tool_calls length: {len(tool_calls) if tool_calls else 0}")
+        if tool_calls:
+            for idx, tc in enumerate(tool_calls):
+                logger.info(f"Tool call {idx+1}: {tc}")
+    if hasattr(response, 'additional_kwargs'):
+        logger.info(f"Response additional_kwargs: {response.additional_kwargs}")
+    if hasattr(response, 'response_metadata'):
+        logger.info(f"Response response_metadata: {response.response_metadata}")
+    
     return {"messages": [response]}
 
 
@@ -227,6 +267,7 @@ def create_react_tools_workflow(
     enable_tool_logging: bool = False,
     tool_logger: Optional[logging.Logger] = None,
     normalize_anthropic_to_openai: bool = False,
+    agent_executable_tool_names: Optional[List[str]] = None,
 ) -> StateGraph:
     """
     Create a standard ReAct tools calling workflow graph.
@@ -249,6 +290,10 @@ def create_react_tools_workflow(
         normalize_anthropic_to_openai: If True, converts Anthropic-style list content
                                        to OpenAI-compatible string format in
                                        call_llm_model_node (default: False)
+        agent_executable_tool_names: List of tool names that should be executed by the agent (not by the workflow).
+                                     When the LLM calls these tools, the workflow will return the
+                                     AIMessage with tool_calls instead of executing them.
+                                     This is useful for tools that must be executed by external systems.
     
     Returns:
         Configured StateGraph workflow (not yet compiled)
@@ -258,7 +303,8 @@ def create_react_tools_workflow(
         ...     tools=my_tools,
         ...     enable_tool_logging=True,
         ...     tool_logger=logger,
-        ...     normalize_anthropic_to_openai=True
+        ...     normalize_anthropic_to_openai=True,
+        ...     agent_executable_tool_names=['tool1', 'tool2']
         ... )
         >>> graph = workflow.compile()
     """
@@ -272,19 +318,48 @@ def create_react_tools_workflow(
     workflow.add_node("llm", llm_node_wrapper)
     workflow.add_node("normalize", normalize_tool_node)
     
-    # Create tool node with optional logging wrapper
-    if enable_tool_logging and tool_logger:
-        original_tool_node = ToolNode(tools)
+    # Create tool node with optional interception for agent-executable tools
+    original_tool_node = ToolNode(tools)
+    agent_executable_tool_names_set = set(agent_executable_tool_names) if agent_executable_tool_names else set()
+    
+    async def custom_tool_node(state):
+        """
+        Custom tool node that:
+        1. Checks if tool call is for an agent-executable tool
+        2. If yes, returns empty messages (workflow will end with AIMessage containing tool_calls)
+        3. If no, executes the tool normally
+        """
+        messages = state.get("messages", [])
+        if not messages:
+            return {"messages": []}
         
-        async def logged_tool_node(state):
+        last_message = messages[-1]
+        tool_calls = getattr(last_message, "tool_calls", [])
+        
+        if not tool_calls:
+            return {"messages": []}
+        
+        # Check if any tool call is for an agent-executable tool
+        has_agent_executable = False
+        for tool_call in tool_calls:
+            tool_name = tool_call.get("name")
+            if tool_name in agent_executable_tool_names_set:
+                has_agent_executable = True
+                if enable_tool_logging and tool_logger:
+                    tool_logger.info(f"[MCP DEBUG] Tool '{tool_name}' is agent-executable - returning to caller for execution")
+                else:
+                    logger.info(f"Tool '{tool_name}' is agent-executable - returning to caller for execution")
+        
+        if has_agent_executable:
+            # Don't execute - return empty to end workflow with AIMessage containing tool_calls
+            return {"messages": []}
+        
+        # All tools are executable - proceed with execution
+        if enable_tool_logging and tool_logger:
             tool_logger.info(f"[MCP DEBUG] ToolNode invoked with state: {state}")
-            messages = state.get("messages", [])
-            if messages:
-                last_msg = messages[-1]
-                tool_calls = getattr(last_msg, "tool_calls", [])
-                tool_logger.info(f"[MCP DEBUG] Processing {len(tool_calls)} tool calls")
-                for idx, tc in enumerate(tool_calls):
-                    tool_logger.info(f"[MCP DEBUG] Tool call {idx+1}: name='{tc.get('name')}', args={tc.get('args')}, id='{tc.get('id')}'")
+            tool_logger.info(f"[MCP DEBUG] Processing {len(tool_calls)} tool calls")
+            for idx, tc in enumerate(tool_calls):
+                tool_logger.info(f"[MCP DEBUG] Tool call {idx+1}: name='{tc.get('name')}', args={tc.get('args')}, id='{tc.get('id')}'")
             
             result = await original_tool_node.ainvoke(state)
             
@@ -297,13 +372,43 @@ def create_react_tools_workflow(
                     tool_logger.info(f"[MCP DEBUG] Tool result {idx+1} full content: {msg.content}")
             
             return result
-        
-        workflow.add_node("tools", logged_tool_node)
-    else:
-        workflow.add_node(ToolNode(tools))
+        else:
+            return await original_tool_node.ainvoke(state)
+    
+    # Create a wrapper that tracks if tools were executed
+    tool_execution_state = {"executed": False}
+    
+    async def tracked_custom_tool_node(state):
+        """Wrapper that tracks whether tools were actually executed."""
+        result = await custom_tool_node(state)
+        # If result has messages, tools were executed
+        tool_execution_state["executed"] = len(result.get("messages", [])) > 0
+        return result
+    
+    workflow.add_node("tools", tracked_custom_tool_node)
     
     workflow.add_edge("llm", "normalize")
-    workflow.add_edge("tools", "llm")
+    
+    # Conditional edge from tools: if non-executable tool was encountered, END; otherwise go back to llm
+    def should_continue_after_tools(state):
+        """Check if we should continue or end after tool execution."""
+        if tool_execution_state["executed"]:
+            # Tools were executed - continue to llm
+            tool_execution_state["executed"] = False  # Reset for next iteration
+            return "llm"
+        else:
+            # Non-executable tool encountered - END the workflow
+            return "end"
+    
+    workflow.add_conditional_edges(
+        "tools",
+        should_continue_after_tools,
+        {
+            "llm": "llm",
+            "end": "__end__"
+        }
+    )
+    
     workflow.add_conditional_edges(
         "normalize",
         tools_condition,

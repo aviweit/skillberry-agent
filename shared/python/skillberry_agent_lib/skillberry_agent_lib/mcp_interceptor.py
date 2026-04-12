@@ -5,6 +5,7 @@ import uuid
 from skillberry_agent_lib.data_model.messages import AssistantMessage, ToolCall, ToolMessage
 from skillberry_agent_lib.skillberry_store import skillberry_store
 from skillberry_agent_lib.trajectory_manager import trajectory_manager
+from skillberry_agent_lib.utils import log_tools_info
 
 
 def _extract_mcp_request(request: Any) -> AssistantMessage:
@@ -14,7 +15,7 @@ def _extract_mcp_request(request: Any) -> AssistantMessage:
     Note: MCPToolCallRequest does not have tool_call_id notion so we
     generate such ourselves.
     """
-    logging.info(f"Enter _extract_mcp_request (request): {request}")
+    logging.debug(f"Enter _extract_mcp_request (request): {request}")
     assert request.name, "Cannot extract tool name from MCP request"
     assert request.args, "Cannot extract tool args from MCP request"
 
@@ -34,7 +35,7 @@ def _extract_mcp_request(request: Any) -> AssistantMessage:
         ]
     )
 
-    logging.info(f"Exit _extract_mcp_request (assistant_message): {assistant_message}")
+    logging.debug(f"Exit _extract_mcp_request (assistant_message): {assistant_message}")
     return assistant_message, tool_call_id
 
 
@@ -44,7 +45,7 @@ def _extract_mcp_result(result: Any, too_call_id: str = "") -> ToolMessage:
     tool call id (the ID of the tool call message).
 
     """
-    logging.info(f"Enter _extract_mcp_result (result): {result}")
+    logging.debug(f"Enter _extract_mcp_result (result): {result}")
 
     is_error = result.isError
     raw_text = result.content[0].text if result.content else ""
@@ -68,7 +69,7 @@ async def pre_hook(skillberry_context: Dict, assistant_message: AssistantMessage
     
     Note: Catches ValueError to prevent trajectory tracking from breaking tool execution.
     """
-    logging.info(f"pre_hook: {skillberry_context}, {assistant_message}")
+    logging.debug(f"pre_hook: {skillberry_context}, {assistant_message}")
     try:
         trajectory_manager.add_message(skillberry_context, assistant_message)
     except ValueError as e:
@@ -82,7 +83,7 @@ async def post_hook(skillberry_context: Dict, tool_message: ToolMessage) -> None
     
     Note: Catches ValueError to prevent trajectory tracking from breaking tool execution.
     """
-    logging.info(f"post_hook: {skillberry_context}, {tool_message}")
+    logging.debug(f"post_hook: {skillberry_context}, {tool_message}")
     try:
         trajectory_manager.add_message(skillberry_context, tool_message)
     except ValueError as e:
@@ -197,10 +198,7 @@ def get_mcp_tools(
     )
     
     logging.info(f"[MCP DEBUG] Retrieved {len(tools)} tools from MCP server")
-    for idx, tool in enumerate(tools):
-        tool_name = getattr(tool, "name", "unknown")
-        tool_desc = getattr(tool, "description", "no description")
-        logging.info(f"[MCP DEBUG] Tool {idx+1}: name='{tool_name}', description='{tool_desc}'")
+    log_tools_info(tools, prefix="[MCP DEBUG]", include_description=True)
     
     return tools
 
@@ -235,7 +233,7 @@ def get_mcp_prompts(
     logging.debug(f"[MCP DEBUG] Getting MCP prompts from port: {port}")
     
     # Get prompts from the MCP server
-    prompts = skillberry_api.get_mcp_prompts(
+    prompts = skillberry_store.get_mcp_prompts(
         port=port,
         server_name=server_name
     )
