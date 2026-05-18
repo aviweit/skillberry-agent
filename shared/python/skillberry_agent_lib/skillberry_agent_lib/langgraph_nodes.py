@@ -138,9 +138,11 @@ def normalize_tool_node(state: ReactToolsCallingAgentState) -> Dict[str, Any]:
     """
     Normalize tool calls in the last message of the state.
     
-    This node checks if the last message contains tool calls. If not, it attempts
-    to parse tool calls from the message content. This handles cases where LLMs
-    return tool calls as text instead of structured tool_calls.
+    This node performs two normalization tasks:
+    1. If tool_calls are missing: Attempts to parse tool calls from message content
+       (handles cases where LLMs return tool calls as text instead of structured data)
+    2. If tool_calls are present: Clears the content field to avoid redundant JSON
+       (tool call information is already in the structured tool_calls field)
     
     Args:
         state: The current agent state
@@ -180,21 +182,29 @@ def normalize_tool_node(state: ReactToolsCallingAgentState) -> Dict[str, Any]:
         parsed_tool_calls = parse_tool_call_from_content(content)
         if parsed_tool_calls:
             thinking_log += "parsed tool calls from content. "
-            normalized = AIMessage(
-                content="",
-                tool_calls=parsed_tool_calls
-            )
-            logger.info(f"normalize_tool_node: parsed tool calls from content: {parsed_tool_calls}")
-            logger.info(f"normalize_tool_node: replacing last message with normalized message")
+            # Create new message preserving original attributes using model_copy
+            normalized = last_message.model_copy(update={
+                "content": "",
+                "tool_calls": parsed_tool_calls
+            })
             messages[-1] = normalized
+            logger.info(f"normalize_tool_node: parsed tool calls from content: {parsed_tool_calls}")
+            logger.info(f"normalize_tool_node: replaced message with normalized version")
         else:
             thinking_log += "no tool calls found leaving message unchanged. "
             logger.info("normalize_tool_node: no tool calls found in content, leaving message unchanged")
     else:
-        thinking_log += "tool calls already present leaving message unchanged. "
-        logger.info(f"normalize_tool_node: {len(tool_calls)} tool calls already present, leaving message unchanged")
+        thinking_log += "tool calls already present, clearing content. "
+        logger.info(f"normalize_tool_node: {len(tool_calls)} tool calls already present, clearing content")
         for idx, tc in enumerate(tool_calls):
             logger.info(f"Existing tool call {idx+1}: {tc}")
+        
+        # Clear content when tool calls are present to avoid redundant JSON
+        if content:
+            # Create new message with cleared content, preserving all other attributes using model_copy
+            normalized = last_message.model_copy(update={"content": ""})
+            messages[-1] = normalized
+            logger.info(f"normalize_tool_node: cleared content from tool-calling message")
 
     return {"messages": messages, "thinking_log": thinking_log}
 
@@ -236,7 +246,7 @@ def call_llm_model_node(
     # Log all messages being passed to the LLM
     logger.info(f"Number of messages being passed to LLM: {len(messages)}")
     for i, msg in enumerate(messages):
-        logger.info(f"Message {i+1}: type={type(msg).__name__}, role={getattr(msg, 'type', 'N/A')}, content_preview={str(msg.content)[:100]}...")
+        logger.info(f"Message {i+1}: type={type(msg).__name__}, role={getattr(msg, 'type', 'N/A')}, content_preview={str(msg.content)[:500]}...")
 
 
     response = state["llm"].invoke(messages, config)
