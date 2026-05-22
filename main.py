@@ -12,7 +12,7 @@ from fast_api.git_version import __git_version__
 from langchain_core.globals import set_verbose, set_debug
 from langchain_core.tracers.stdout import ConsoleCallbackHandler
 
-from llm.common import current_llm
+from llm.common import get_current_llm, LLMInitializationError
 
 from fast_api.api_server import api_server
 from config.config_ui import config_ui_app
@@ -90,28 +90,43 @@ def run_config_ui():
     config_ui_app.run(debug=True, use_reloader=False, host="0.0.0.0", port=7001)
 
 
+def _stay_in_config_only_mode(reason: str):
+    logger.error(reason)
+    logger.error("Configuration UI is available.")
+    logger.error("Update the configuration, then restart the agent.")
+    while True:
+        sleep(100000)
+
+
 def main():
 
     # Run the configuration UI
-    config_ui_thread = threading.Thread(target=run_config_ui)
+    config_ui_thread = threading.Thread(target=run_config_ui, daemon=True)
     config_ui_thread.start()
 
+    logger.info("Configuration UI is available.")
+
     # make sure we can communicate with the LLM
-    if not current_llm.check_llm_communication():
-        logger.error("Can't communicate with the LLM, please check network, VPN, access keys etc.")
-        logging.error("Only the configuration UI is working now, allowing to change the configuration and restart.")
-        sleep(100000)
+    try:
+        current_llm = get_current_llm(refresh=True)
+        current_llm.check_llm_communication()
+    except LLMInitializationError as e:
+        _stay_in_config_only_mode(e.user_message)
+    except Exception:
+        _stay_in_config_only_mode(
+            "Can't communicate with the LLM. Please check model/provider configuration, network, VPN, and access keys."
+        )
 
     # make sure we can communicate with the Skillberry API
     try:
         skillberry_store_communication = skillberry_store.check_communication()
-    except Exception as e:
+    except Exception:
         skillberry_store_communication = False
 
     if not skillberry_store_communication:
-        logger.error("Can't communicate with the Skillberry Store service, please check network, VPN, access keys etc.")
-        logging.error("Only the configuration UI is working now, allowing to change the configuration and restart.")
-        sleep(100000)
+        _stay_in_config_only_mode(
+            "Can't communicate with the Skillberry Store service. Please check network, VPN, access keys, and service availability."
+        )
 
     # emit the git version
     logging.info(f"skillberry-tools-agent version {__git_version__} is running.")

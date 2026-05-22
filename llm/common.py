@@ -430,6 +430,44 @@ class LLMAdapterError:
         return self
 
 
+class LLMInitializationError(RuntimeError):
+    """Raised when the LLM provider cannot be initialized cleanly."""
+
+    def __init__(self, user_message: str, *, details: str = ""):
+        super().__init__(user_message)
+        self.user_message = user_message
+        self.details = details or user_message
+
+
+def _classify_llm_startup_error(error: Exception) -> str:
+    """Return a concise user-facing startup message for known LLM init failures."""
+    message = str(error).strip()
+    lowered = message.lower()
+
+    if "not supported for this environment" in lowered or "supported models" in lowered:
+        return (
+            "The configured LLM model is not supported by the selected provider/environment. "
+            "Please correct the model in the configuration UI and restart the agent."
+        )
+
+    if "apikey" in lowered or "api key" in lowered or "token" in lowered or "unauthorized" in lowered:
+        return (
+            "The LLM credentials appear to be missing or invalid. "
+            "Please correct the provider credentials/configuration and restart the agent."
+        )
+
+    if any(term in lowered for term in ["connection", "timeout", "dns", "network", "vpn", "temporarily unavailable"]):
+        return (
+            "The agent could not reach the configured LLM service. "
+            "Please check network/VPN/connectivity settings in the environment and restart the agent."
+        )
+
+    return (
+        "The agent could not initialize the configured LLM provider. "
+        "Please review the configuration and restart the agent."
+    )
+
+
 class LLMProvider:
     def __init__(
         self,
@@ -548,11 +586,18 @@ class LLMProvider:
             if api_key:
                 provider_kwargs["api_key"] = api_key
 
-        self.llm = _build_llm_client_adapter(
-            self.llm_provider_name,
-            self.llm_model,
-            **provider_kwargs,
-        )
+        try:
+            self.llm = _build_llm_client_adapter(
+                self.llm_provider_name,
+                self.llm_model,
+                **provider_kwargs,
+            )
+        except Exception as e:
+            logger.error("Failed to initialize LLM provider", exc_info=True)
+            raise LLMInitializationError(
+                _classify_llm_startup_error(e),
+                details=str(e),
+            ) from e
 
     def check_llm_communication(self):
         """
@@ -583,18 +628,47 @@ class LLMProvider:
         return True
 
 
-# Initialize current_llm with configuration
-llm_provider_name = config.get("provider_name")
-llm_model = config.get("model_name")
-llm_temperature = config.get("temperature")
-llm_api_base = config.get("provider_api_base", "")
+_current_llm: Optional[LLMProvider] = None
 
-current_llm = LLMProvider(
-    llm_provider_name=llm_provider_name,
-    llm_model=llm_model,
-    llm_temperature=llm_temperature,
-    llm_role="",
-    llm_api_base=llm_api_base,
-)
+
+def build_current_llm() -> LLMProvider:
+    llm_provider_name_value = config.get("provider_name", "")
+    llm_model_value = config.get("model_name", "")
+    llm_temperature_value = config.get("temperature", 0.0)
+    llm_api_base_value = config.get("provider_api_base", "")
+
+    llm_provider_name = llm_provider_name_value if isinstance(llm_provider_name_value, str) else ""
+    llm_model = llm_model_value if isinstance(llm_model_value, str) else ""
+    llm_temperature = (
+        float(llm_temperature_value)
+        if isinstance(llm_temperature_value, (int, float))
+        else 0.0
+    )
+    llm_api_base = llm_api_base_value if isinstance(llm_api_base_value, str) else ""
+
+    return LLMProvider(
+        llm_provider_name=llm_provider_name,
+        llm_model=llm_model,
+        llm_temperature=llm_temperature,
+        llm_role="",
+        llm_api_base=llm_api_base,
+    )
+
+
+def get_current_llm(refresh: bool = False) -> LLMProvider:
+    global _current_llm
+
+    if refresh or _current_llm is None:
+        _current_llm = build_current_llm()
+
+    return _current_llm
+
+
+class _CurrentLLMProxy:
+    def __getattr__(self, item: str) -> Any:
+        return getattr(get_current_llm(), item)
+
+
+current_llm = _CurrentLLMProxy()
 
 # Made with Bob
