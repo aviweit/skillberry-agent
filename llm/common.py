@@ -3,7 +3,6 @@ import os
 import logging
 import json
 import uuid
-from enum import StrEnum
 from typing import Any, Dict, List, Optional, Union
 
 from langchain_core.messages import AIMessage, ToolCall
@@ -16,41 +15,6 @@ logger = logging.getLogger(__name__)
 
 # Suffix used by llm-switchboard to denote providers with structured output validation support.
 _OUTPUT_VAL_SUFFIX = ".output_val"
-
-
-class LLMProviderType(StrEnum):
-    """
-    Enum representing supported LLM providers.
-    """
-
-    LITELLM_IBM = "litellm.ibm"
-    LITELLM_RITS = "litellm.rits"
-    LITELLM_IBM_OUTPUT_VAL = "litellm.ibm.output_val"
-    LITELLM_RITS_OUTPUT_VAL = "litellm.rits.output_val"
-    WATSONX = "watsonx"
-    WATSONX_OUTPUT_VAL = "watsonx.output_val"
-
-    @classmethod
-    def from_llm_provider_str(cls, llm_provider_type_str: str):
-        """
-        Convert a string to an LLMProviderType enum value.
-
-        Args:
-            llm_provider_type_str: String representation of the provider type
-
-        Returns:
-            LLMProviderType: The corresponding enum value
-
-        Raises:
-            ValueError: If the provider string is not supported
-        """
-        try:
-            return cls(llm_provider_type_str)
-        except ValueError:
-            raise ValueError(
-                f"Invalid llm provider: {llm_provider_type_str}. "
-                f"Supported llm providers are: {[p.value for p in cls]}"
-            )
 
 
 def _langchain_message_to_openai_dict(m: Any, role_map: Dict[str, str]) -> Dict[str, Any]:
@@ -268,6 +232,7 @@ class LLMClientLangChainAdapter:
         structured_model_in_generate: bool = False,
         bound_tools: Optional[List[Any]] = None,
         tool_kwargs: Optional[Dict[str, Any]] = None,
+        temperature: Optional[float] = None,
     ) -> None:
         self._simple_client = simple_client
         self._structured_client = structured_client
@@ -276,6 +241,7 @@ class LLMClientLangChainAdapter:
         self._structured_model_in_generate = structured_model_in_generate
         self._bound_tools = bound_tools or []
         self._tool_kwargs = tool_kwargs or {}
+        self._temperature = temperature
         
         # Convert tools to OpenAI schema once during initialization
         self._tools_openai_schema: Optional[List[Dict[str, Any]]] = None
@@ -309,6 +275,10 @@ class LLMClientLangChainAdapter:
         if self._simple_model_in_generate and self._model_name:
             kwargs["model"] = self._model_name
         
+        # Pass temperature to llm-switchboard's generate() if configured
+        if self._temperature is not None:
+            kwargs["temperature"] = self._temperature
+        
         response = self._simple_client.generate(prompt=messages, **kwargs)
         return _openai_response_to_langchain_message(response)
 
@@ -334,6 +304,7 @@ class LLMClientLangChainAdapter:
             structured_model_in_generate=self._structured_model_in_generate,
             bound_tools=tools,
             tool_kwargs=kwargs,
+            temperature=self._temperature,
         )
 
 
@@ -364,6 +335,7 @@ def _instantiate_llm_client(
 def _build_llm_client_adapter(
     provider_name: str,
     model_name: str,
+    temperature: Optional[float] = None,
     **provider_kwargs: Any,
 ) -> LLMClientLangChainAdapter:
     """
@@ -409,6 +381,7 @@ def _build_llm_client_adapter(
         model_name=model_name,
         simple_model_in_generate=simple_model_in_generate,
         structured_model_in_generate=structured_model_in_generate,
+        temperature=temperature,
     )
 
 
@@ -475,127 +448,50 @@ class LLMProvider:
         llm_model: str,
         llm_temperature: float,
         llm_role: str,
-        llm_timeout: int = 30,
-        llm_api_base: str = "",
     ):
         """
         Initialize an LLM provider instance using llm-switchboard.
 
         Parameters:
             llm_provider_name (str): llm-switchboard provider name
-                (e.g. 'litellm.rits.output_val', 'litellm.ibm.output_val',
-                'litellm', 'openai.sync.output_val', 'watsonx')
+                Examples: 'openai.sync', 'litellm', 'litellm.ibm', 'litellm.rits',
+                'litellm.ollama', 'watsonx'
             llm_model (str): LLM model name
             llm_temperature (float): LLM temperature
             llm_role (str): Role identifier for logging
-            llm_timeout (int): Request timeout in seconds
-            llm_api_base (str): Base URL for the LLM API endpoint
+            
+        Note: Provider-specific credentials and configuration should be set via
+        environment variables (e.g., OPENAI_API_KEY, WX_URL, WX_API_KEY, WX_PROJECT_ID, etc.)
         """
         self.llm_provider_name = llm_provider_name
         self.llm_temperature = llm_temperature
         self.llm_model = llm_model
         self.llm_role = llm_role
-        self.llm_timeout = llm_timeout
-        self.llm_api_base = llm_api_base
 
         logger.info(
             f"Creating LLM provider: provider={self.llm_provider_name}, "
-            f"model={self.llm_model}, role={self.llm_role}"
+            f"model={self.llm_model}, role={self.llm_role}, temperature={self.llm_temperature}"
         )
-
-        # Validate provider type
-        try:
-            self.llm_provider_type = LLMProviderType.from_llm_provider_str(
-                llm_provider_name
-            )
-        except Exception as e:
-            error_msg = f"Failed to detect LLM platform: {str(e)}"
-            logger.error(error_msg)
-            # Create an error LLM adapter that will fail health check
-            self.llm = LLMAdapterError(error_msg)
-            return
-
-        # Build provider kwargs based on provider type
-        provider_kwargs = {}
-
-        # RITS-based providers (litellm.ibm, litellm.rits)
-        if self.llm_provider_type in [
-            LLMProviderType.LITELLM_IBM,
-            LLMProviderType.LITELLM_IBM_OUTPUT_VAL,
-            LLMProviderType.LITELLM_RITS,
-            LLMProviderType.LITELLM_RITS_OUTPUT_VAL,
-        ]:
-            # Validate RITS_API_KEY
-            if "RITS_API_KEY" not in os.environ:
-                error_msg = (
-                    "RITS_API_KEY environment variable not set. "
-                    "Please set RITS_API_KEY environment variable. "
-                    "Additional info can be found on #rits-community slack"
-                )
-                logger.error(error_msg)
-                self.llm = LLMAdapterError(error_msg)
-                return
-            
-            provider_kwargs["api_key"] = os.environ["RITS_API_KEY"]
-            
-            # Map llm_api_base to appropriate parameter
-            if self.llm_provider_type in [
-                LLMProviderType.LITELLM_IBM,
-                LLMProviderType.LITELLM_IBM_OUTPUT_VAL,
-            ]:
-                provider_kwargs["api_base"] = llm_api_base
-            elif self.llm_provider_type in [
-                LLMProviderType.LITELLM_RITS,
-                LLMProviderType.LITELLM_RITS_OUTPUT_VAL,
-            ]:
-                provider_kwargs["api_url"] = llm_api_base
-
-        # Watsonx providers
-        elif self.llm_provider_type in [
-            LLMProviderType.WATSONX,
-            LLMProviderType.WATSONX_OUTPUT_VAL,
-        ]:
-            # Validate all required Watsonx environment variables
-            missing_vars = []
-            if "WATSONX_APIKEY" not in os.environ:
-                missing_vars.append("WATSONX_APIKEY")
-            if "WATSONX_PROJECT_ID" not in os.environ:
-                missing_vars.append("WATSONX_PROJECT_ID")
-            if "WATSONX_URL" not in os.environ:
-                missing_vars.append("WATSONX_URL")
-            
-            if missing_vars:
-                error_msg = (
-                    f"Missing required Watsonx environment variables: {', '.join(missing_vars)}. "
-                    "Please set all required environment variables."
-                )
-                logger.error(error_msg)
-                self.llm = LLMAdapterError(error_msg)
-                return
-            
-            provider_kwargs["api_key"] = os.environ["WATSONX_APIKEY"]
-            provider_kwargs["project_id"] = os.environ["WATSONX_PROJECT_ID"]
-            provider_kwargs["url"] = os.environ["WATSONX_URL"]
-
-        # Other providers (fallback to original behavior)
-        else:
-            provider_kwargs["api_base"] = llm_api_base
-            
-            # Fallback API key resolution for other providers
-            api_key = os.getenv("RITS_API_KEY") or os.getenv("IBM_THIRD_PARTY_API_KEY")
-            if api_key:
-                provider_kwargs["api_key"] = api_key
 
         try:
             self.llm = _build_llm_client_adapter(
                 self.llm_provider_name,
                 self.llm_model,
-                **provider_kwargs,
+                temperature=self.llm_temperature,
             )
         except Exception as e:
             logger.error("Failed to initialize LLM provider", exc_info=True)
+            # Provide helpful error message with config service guidance
+            error_msg = (
+                f"Failed to initialize LLM provider '{self.llm_provider_name}'. "
+                f"Please check your configuration using the Configuration UI and verify:\n"
+                f"  - Provider name is correct (e.g., 'openai.sync', 'litellm', 'watsonx')\n"
+                f"  - Required environment variables are set for the provider\n"
+                f"  - Model name '{self.llm_model}' is valid for the provider\n"
+                f"\nOriginal error: {str(e)}"
+            )
             raise LLMInitializationError(
-                _classify_llm_startup_error(e),
+                error_msg,
                 details=str(e),
             ) from e
 
@@ -611,7 +507,6 @@ class LLMProvider:
             f"==> LLM Configuration (for role: {self.llm_role}):\n"
             f"==> =================\n"
             f"==> Provider: {self.llm_provider_name}\n"
-            f"==> LLM API Base: {self.llm_api_base}\n"
             f"==> Using model: {self.llm_model}\n"
             f"==> Temperature: {self.llm_temperature}\n"
             f"==> =================\n\n"
@@ -621,8 +516,7 @@ class LLMProvider:
             self.llm.invoke(f"try to communicate with the {self.llm_role} llm")
             logger.info(f"Communication with the {self.llm_role} LLM established.")
         except Exception as e:
-            logger.error(f"{self.llm_role} LLM is not working {e}")
-            logger.error(f"llm_api_base = {self.llm_api_base}")
+            logger.error(f"{self.llm_role} LLM is not working: {e}")
             raise e
 
         return True
@@ -635,7 +529,6 @@ def build_current_llm() -> LLMProvider:
     llm_provider_name_value = config.get("provider_name", "")
     llm_model_value = config.get("model_name", "")
     llm_temperature_value = config.get("temperature", 0.0)
-    llm_api_base_value = config.get("provider_api_base", "")
 
     llm_provider_name = llm_provider_name_value if isinstance(llm_provider_name_value, str) else ""
     llm_model = llm_model_value if isinstance(llm_model_value, str) else ""
@@ -644,14 +537,12 @@ def build_current_llm() -> LLMProvider:
         if isinstance(llm_temperature_value, (int, float))
         else 0.0
     )
-    llm_api_base = llm_api_base_value if isinstance(llm_api_base_value, str) else ""
 
     return LLMProvider(
         llm_provider_name=llm_provider_name,
         llm_model=llm_model,
         llm_temperature=llm_temperature,
         llm_role="",
-        llm_api_base=llm_api_base,
     )
 
 

@@ -9,23 +9,18 @@ CONFIG_STRUCTURE = {
     },
     "provider_name": {
         "type": "str",
-        "default": "litellm.rits.output_val",
-        "label": "LLM provider (supported llm-switchboard providers: 'litellm.ibm', 'litellm.ibm.output_val', 'litellm.rits', 'litellm.rits.output_val', 'watsonx', 'watsonx.output_val')",
-    },
-    "provider_api_base": {
-        "type": "str",
-        "default": "https://inference-3scale-apicast-production.apps.rits.fmaas.res.ibm.com",
-        "label": "Provider API base URL",
+        "default": "openai.sync",
+        "label": "LLM provider name (e.g., 'openai.sync', 'litellm', 'watsonx'). Provider-specific credentials should be set via environment variables.",
     },
     "model_name": {
         "type": "str",
-        "default": "openai/gpt-oss-120b",
+        "default": "gpt-4",
         "label": "Model name to use with the provider",
     },
     "temperature": {
         "type": "float",
         "default": 0,
-        "label": "The LLM model temperature: ",
+        "label": "LLM model temperature",
     },
     "tools_react_agent": {
         "type": "group",
