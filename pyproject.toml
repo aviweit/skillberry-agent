@@ -11,9 +11,6 @@ requires-python = ">=3.11"
 dependencies = [
     "fastapi>=0.115.12",
     "uvicorn>=0.16.0",
-    "langchain-community",
-    "langchain_openai>=0.3.16",
-    "langchain_ibm>=0.3.14",
     "python-dotenv",
     "httpx",
     "pytest>=8.3.4",
@@ -23,10 +20,9 @@ dependencies = [
     "Flask>=3.1.0",
     "ipython>=8.12.3",
     "skillberry-agent-lib",
-    "skillberry-store-sdk @ git+https://github.com/skillberry-ai/skillberry-store.git@main#subdirectory=client/python/skillberry_store_sdk",
-    "openapi-generator-cli[jdk4py]==7.20.0",
+    "skillberry-store-sdk @ git+https://github.com/skillberry-ai/skillberry-store.git@0.1.0-alpha#subdirectory=client/python/skillberry_store_sdk",
     "toml-cli",
-    "llm-switchboard[litellm]==0.1.0"
+    "llm-switchboard[litellm]>=0.1.0"
 ]
 
 [project.optional-dependencies]
