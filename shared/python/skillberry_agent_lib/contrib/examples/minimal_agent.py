@@ -56,8 +56,13 @@ class SimpleLLMAdapter:
     - bind_tools() for tool binding
     - invoke() for message generation
     
-    For production use, see llm/common.py's LLMClientLangChainAdapter
-    which includes full message conversion, error handling, and more.
+    Note: This simple adapter does not support tool calling. The trajectory
+    will be empty because trajectory is populated by the MCP interceptor
+    only when tools are actually executed.
+    
+    For production use with full tool support, see llm/common.py's
+    LLMClientLangChainAdapter which includes complete message conversion,
+    tool calling, error handling, and more.
     """
     
     def __init__(self, client: Any, model_name: str, model_in_generate: bool):
@@ -275,14 +280,7 @@ async def run_minimal_agent():
     # Initialize trajectory manager
     trajectory_manager = TrajectoryManager()
     
-    # Get trajectory (optional - for debugging)
-    try:
-        trajectory = trajectory_manager.get_trajectory(agent_context)
-        logger.info(f"Agent trajectory: {len(trajectory)} steps")
-        for i, msg in enumerate(trajectory, 1):
-            logger.debug(f"  Step {i}: {msg.role}")
-    except Exception as e:
-        logger.warning(f"Failed to retrieve trajectory: {e}")
+    # Note: Trajectory will be empty (see SimpleLLMAdapter note at top of file)
     
     # Cleanup VMCP server
     try:
