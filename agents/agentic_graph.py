@@ -243,7 +243,7 @@ def execute_agentic_graph(
         port=port, server_name=server.name, skillberry_context=skillberry_context
     )
 
-    logging.info(f"MCP TOOLS -=-=-=-=-=-=-=-=-=- {tools} -=-=-=-=-=-=-=-=-=-=-=-=-=-")
+    logging.debug(f"MCP TOOLS -=-=-=-=-=-=-=-=-=- {tools} -=-=-=-=-=-=-=-=-=-=-=-=-=-")
     if not tools:
         logging.warning(f"=====> WARNING: No tools retrieved from MCP server!")
     logging.info(f"MCP TOOLS COUNT: {len(tools)}")
@@ -255,12 +255,12 @@ def execute_agentic_graph(
     )  # Track tools that should be executed by the agent (not by workflow)
     # Start with MCP tools (already in LangChain format)
     if tools:
-        logging.info(f"=====> Using {len(tools)} MCP tools")
+        logging.debug(f"=====> Using {len(tools)} MCP tools")
         all_tools.extend(tools)
 
     # Convert chat request tools from OpenAI format to LangChain format
     if agent_tools:
-        logging.info(
+        logging.debug(
             f"=====> Converting {len(agent_tools)} chat request tools from OpenAI to LangChain format"
         )
         for tool_dict in agent_tools:
@@ -270,15 +270,15 @@ def execute_agentic_graph(
                 agent_executable_tool_names.append(
                     langchain_tool.name
                 )  # Mark as agent-executable
-                logging.info(
+                logging.debug(
                     f"=====> Converted chat request tool: {langchain_tool.name} (agent-executable)"
                 )
             except Exception as e:
                 tool_name = tool_dict.get("function", {}).get("name", "unknown")
                 logging.error(f"=====> Failed to convert tool {tool_name}: {e}")
 
-    logging.info(f"=====> Total tools for binding: {len(all_tools)}")
-    logging.info(
+    logging.debug(f"=====> Total tools for binding: {len(all_tools)}")
+    logging.debug(
         f"=====> Agent-executable tools (must be executed by the agent): {agent_executable_tool_names}"
     )
 
@@ -288,19 +288,19 @@ def execute_agentic_graph(
             thinking_log += (
                 "I don't have any tools to use. using the LLM model as-is to response. "
             )
-            logging.info(f"=====> No tools, not binding")
+            logging.debug(f"=====> No tools, not binding")
             logging.info(
                 f"=====> WARNING: LLM will NOT be able to call tools - it will only generate text responses"
             )
             llm_with_tools = current_llm.llm
         else:
             thinking_log += "I will now use the tools and the LLM model to respond. "
-            logging.info(f"=====> Binding {len(all_tools)} tools to LLM")
+            logging.debug(f"=====> Binding {len(all_tools)} tools to LLM")
             log_tools_info(all_tools, prefix="=====>")
             llm_with_tools = current_llm.llm.bind_tools(
                 tools=all_tools, tool_choice="auto"
             )
-            logging.info(f"=====> Tools successfully bound to LLM")
+            logging.debug(f"=====> Tools successfully bound to LLM")
 
     except Exception as e:
         logging.error(f"Error while binding tools: {e}")
@@ -317,7 +317,7 @@ def execute_agentic_graph(
     graph = workflow.compile()
 
     # 6. Prepare chat messages with MCP prompts injection
-    logging.info(f"=====> Preparing chat messages with MCP prompts injection")
+    logging.debug(f"=====> Preparing chat messages with MCP prompts injection")
     mcp_prompts_position = env_mcp_prompts_position
     llm_messages = build_chat_messages(
         chat_history=chat_messages,
@@ -329,15 +329,15 @@ def execute_agentic_graph(
 
     # 7. Invoke the graph and stream results
     try:
-        logging.info(f"=====> Invoking the tools react agent")
-        logging.info(f"Chat history has {len(chat_messages)} messages")
-        logging.info(f"LLM messages prepared: {len(llm_messages)} messages")
+        logging.debug(f"=====> Invoking the tools react agent")
+        logging.debug(f"Chat history has {len(chat_messages)} messages")
+        logging.debug(f"LLM messages prepared: {len(llm_messages)} messages")
         recursion_limit = _config.get("tools_react_agent__recursion_limit")
 
         # Log all messages being passed to the graph
-        logging.info(f"Number of messages being passed to graph: {len(llm_messages)}")
+        logging.debug(f"Number of messages being passed to graph: {len(llm_messages)}")
         for i, msg in enumerate(llm_messages):
-            logging.info(
+            logging.debug(
                 f"Message {i+1}: type={type(msg).__name__}, role={getattr(msg, 'type', 'N/A')}, content_preview={str(msg.content)[:100]}..."
             )
 
@@ -366,10 +366,10 @@ def execute_agentic_graph(
     try:
         # Check if final_message has tool_calls that need to be executed by the agent
         if hasattr(final_message, "tool_calls") and final_message.tool_calls:
-            logging.info(
+            logging.debug(
                 f"final AI response has {len(final_message.tool_calls)} tool calls - returning AIMessage for the agent to execute"
             )
-            logging.info(
+            logging.debug(
                 f"Tool calls: {[tc.get('name') for tc in final_message.tool_calls]}"
             )
             # Return the AIMessage object so tool_calls are preserved
@@ -377,7 +377,7 @@ def execute_agentic_graph(
         else:
             # No tool calls - return content as string (legacy behavior)
             ai_response = final_message.content
-            logging.info(
+            logging.debug(
                 f"final AI response: {final_message.content} given from: {llm_messages}"
             )
             thinking_log += f"I am done. Returning a response to the user."
@@ -388,7 +388,7 @@ def execute_agentic_graph(
             else:
                 output_content = ai_response
 
-            logger.info(f"output_content: {output_content}")
+            logger.debug(f"output_content: {output_content}")
             logging.info(f"=======>>> execute_agentic_graph ended <<<=======")
             return output_content
     except Exception as e:
