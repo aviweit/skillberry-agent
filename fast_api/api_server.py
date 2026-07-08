@@ -1,4 +1,4 @@
-from typing import Any, Optional, List, Dict
+from typing import Any, Optional, List, Dict, Union
 import json
 import uuid
 
@@ -32,24 +32,47 @@ from agents.agentic_graph import execute_agentic_graph, trajectory, disconnect
 logger.info("Using agentic graph implementation")
 
 
+class ContentBlock(BaseModel):
+    model_config = {"extra": "ignore"}
+    type: str
+    text: Optional[str] = None
+
+
 class ChatMessage(BaseModel):
+    model_config = {"extra": "ignore"}
+
     role: str = Field(
         ...,
         description="Role of the message sender, e.g., 'system', 'user', or 'assistant'",
     )
-    content: str = Field(..., description="Message content")
+    content: Optional[Union[str, List[ContentBlock], List[Any]]] = Field(None, description="Message content")
+
+    def _content_as_str(self) -> str:
+        if self.content is None:
+            return ""
+        if isinstance(self.content, str):
+            return self.content
+        # list of content blocks — concatenate all text parts
+        parts = []
+        for block in self.content:
+            if isinstance(block, ContentBlock) and block.text:
+                parts.append(block.text)
+            elif isinstance(block, dict) and block.get("text"):
+                parts.append(block["text"])
+        return "\n".join(parts)
 
     # to BaseMessage
     def to_base_message(self):
+        content = self._content_as_str()
         if self.role == "user":
-            return HumanMessage(content=self.content)
+            return HumanMessage(content=content)
         elif self.role == "assistant":
-            return AIMessage(content=self.content)
+            return AIMessage(content=content)
         elif self.role == "system":
-            return SystemMessage(content=self.content)
+            return SystemMessage(content=content)
         else:
             # Fallback for unknown roles
-            return HumanMessage(content=self.content)
+            return HumanMessage(content=content)
 
 
 # Tool definition models
@@ -68,6 +91,8 @@ class Tool(BaseModel):
 
 # Prompt request data model
 class ChatRequest(BaseModel):
+    model_config = {"extra": "ignore"}
+
     model: str = Field(..., description="Model to use, e.g., 'granite'")
     messages: list[ChatMessage] = Field(..., description="List of messages for context")
     temperature: float = Field(0.7, ge=0, le=2, description="Sampling temperature")
@@ -192,7 +217,7 @@ def api_prompt(
 
 @api_server.post("/chat/completions", tags=["chat"])
 @api_server.post("/v1/chat/completions", tags=["chat"])
-def api_chat_completion(chat_request: ChatRequest, request: Request):
+def _api_chat_completion(chat_request: ChatRequest, request: Request):
     # Log the incoming ChatRequest
     logger.info(
         f"ChatRequest received - model: {chat_request.model}, temperature: {chat_request.temperature}, max_tokens: {chat_request.max_tokens}, messages count: {len(chat_request.messages)}"
