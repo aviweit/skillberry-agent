@@ -208,7 +208,7 @@ def api_prompt(
     try:
         user_message = ChatMessage(role="user", content=user_prompt)
         chat_request = ChatRequest(model="API_CALL", messages=[user_message])
-        response = api_chat_completion(chat_request, request)
+        response = _api_chat_completion(chat_request, request)
         return response
     except Exception as e:
         logging.error(f"An error occurred: {e}")
