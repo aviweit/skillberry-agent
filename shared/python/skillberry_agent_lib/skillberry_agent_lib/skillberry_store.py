@@ -13,6 +13,55 @@ from skillberry_agent_lib.utils import SKILLBERRY_CONTEXT, flatten_keys, extract
 logger = logging.getLogger(__name__)
 
 
+def prompt_content_text(prompt_result: Any) -> Optional[str]:
+    """Return the full text of an MCP ``get_prompt`` result, or None when it carries no content.
+
+    Every message's text is kept, joined by newlines, so a prompt split across several
+    messages is not cut down to its first one.
+    """
+    parts: List[str] = []
+    for message in getattr(prompt_result, "messages", None) or []:
+        content = getattr(message, "content", None)
+        if content is None:
+            continue
+        # Handle different content types - use getattr to avoid type errors
+        text = getattr(content, "text", None)
+        if text is None:
+            text = content if isinstance(content, str) else str(content)
+        parts.append(text)
+    return "\n".join(parts) if parts else None
+
+
+async def collect_prompts(session: Any) -> List[Any]:
+    """List the session's MCP prompts and fetch the full content of each one.
+
+    A prompt whose content cannot be fetched is skipped (and logged as an error). It is never
+    replaced by its listed ``description``: the store generates that from the first line or
+    first 100 characters of the content, so injecting it would silently truncate the prompt.
+    """
+    prompts_result = await session.list_prompts()
+    if not prompts_result or not prompts_result.prompts:
+        return []
+
+    prompts_list: List[Any] = []
+    for prompt_meta in prompts_result.prompts:
+        try:
+            prompt_result = await session.get_prompt(prompt_meta.name)
+        except Exception as e:
+            logger.error(
+                f"Failed to get content for prompt '{prompt_meta.name}': {e}. Not injecting it: "
+                "its listed description is a truncated summary, not the prompt."
+            )
+            continue
+        text = prompt_content_text(prompt_result)
+        if text is None:
+            logger.error(f"Prompt '{prompt_meta.name}' returned no content; not injecting it.")
+            continue
+        # Create a prompt object with the actual content
+        prompts_list.append(type("Prompt", (), {"name": prompt_meta.name, "description": text})())
+    return prompts_list
+
+
 class SkillberryStore:
     """Client for interacting with the Skillberry Store using the SDK.
     
@@ -409,48 +458,10 @@ class SkillberryStore:
             
             # Use asyncio to fetch prompts
             async def fetch_prompts():
-                prompts_list = []
                 async with sse_client(mcp_url) as (read, write):
                     async with ClientSession(read, write) as session:
                         await session.initialize()
-                        
-                        # List available prompts
-                        prompts_result = await session.list_prompts()
-                        if not prompts_result or not prompts_result.prompts:
-                            return []
-                        
-                        # Fetch the actual content for each prompt
-                        for prompt_meta in prompts_result.prompts:
-                            try:
-                                # Get the full prompt content using get_prompt
-                                prompt_result = await session.get_prompt(prompt_meta.name)
-                                if prompt_result and prompt_result.messages:
-                                    # Extract the content from the messages
-                                    for message in prompt_result.messages:
-                                        if hasattr(message, 'content'):
-                                            content = message.content
-                                            # Handle different content types - use getattr to avoid type errors
-                                            description = getattr(content, 'text', None)
-                                            if description is None:
-                                                if isinstance(content, str):
-                                                    description = content
-                                                else:
-                                                    description = str(content)
-                                            
-                                            # Create a prompt object with the actual content
-                                            prompt_obj = type('Prompt', (), {
-                                                'name': prompt_meta.name,
-                                                'description': description
-                                            })()
-                                            prompts_list.append(prompt_obj)
-                                            break  # Use first message content
-                            except Exception as e:
-                                logger.warning(f"Failed to get content for prompt '{prompt_meta.name}': {e}")
-                                # Fallback to using the metadata description if available
-                                if hasattr(prompt_meta, 'description') and prompt_meta.description:
-                                    prompts_list.append(prompt_meta)
-                
-                return prompts_list
+                        return await collect_prompts(session)
             
             # Check if we're already in an event loop (e.g., FastAPI context)
             try:

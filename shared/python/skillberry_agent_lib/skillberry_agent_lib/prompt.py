@@ -84,14 +84,19 @@ def build_chat_messages(
         list: Modified chat_history with MCP prompts inserted (LangChain BaseMessage objects)
     """
     from langchain_core.messages import SystemMessage
-    
+    from skillberry_agent_lib.context_hooks import render_skill_prompt, trim_chat_history
+
+    # Context hooks (opt-in via skillberry-context-* headers; no-ops when unset)
+    chat_history[:] = trim_chat_history(chat_history, skillberry_context)
+
     # Get and format MCP prompts from server
     mcp_prompts_text = get_mcp_prompts_and_format(
         port=mcp_port,
         server_name=mcp_server_name,
         skillberry_context=skillberry_context
     )
-    
+    mcp_prompts_text = render_skill_prompt(mcp_prompts_text, skillberry_context)
+
     if not mcp_prompts_text:
         logging.warning("No MCP prompts retrieved from server")
         return chat_history
