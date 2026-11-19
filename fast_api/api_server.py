@@ -29,6 +29,22 @@ logger = logging.getLogger(__name__)
 # Load agentic graph implementation
 from agents.agentic_graph import execute_agentic_graph, trajectory, disconnect
 
+# Credential headers are masked in the log; every other header (the skillberry-context-* ones
+# included) is logged as received.
+_SENSITIVE_HEADERS = {"authorization", "proxy-authorization", "cookie", "x-api-key", "api-key"}
+
+
+def redacted_headers(headers) -> dict:
+    """The request headers as a dict, with credential headers masked."""
+    return {k: ("<redacted>" if k.lower() in _SENSITIVE_HEADERS else v) for k, v in headers.items()}
+
+
+def log_request_headers(request: Request) -> None:
+    """Log the incoming request's headers at INFO between ===== markers, credentials masked."""
+    logging.info("=" * 80)
+    logging.info(f"[REQUEST HEADERS] {request.method} {request.url.path} {redacted_headers(request.headers)}")
+    logging.info("=" * 80)
+
 logger.info("Using agentic graph implementation")
 
 
@@ -225,9 +241,7 @@ def _api_chat_completion(chat_request: ChatRequest, request: Request):
     logger.debug(f"ChatRequest full details: {chat_request.model_dump()}")
 
     headers = request.headers
-    logging.debug("=" * 80)
-    logging.debug(f"[REQUEST HEADERS] {headers}")
-    logging.debug("=" * 80)
+    log_request_headers(request)
 
     skillberry_context = unflatten_keys(headers).get(SKILLBERRY_CONTEXT.lower())
 
@@ -312,9 +326,7 @@ def _api_chat_completion(chat_request: ChatRequest, request: Request):
 @api_server.get("/trajectory")
 def get_trajectory(request: Request):
     headers = request.headers
-    logging.debug("=" * 80)
-    logging.debug(f"[REQUEST HEADERS] {headers}")
-    logging.debug("=" * 80)
+    log_request_headers(request)
 
     skillberry_context = unflatten_keys(headers).get(SKILLBERRY_CONTEXT.lower())
 
@@ -336,9 +348,7 @@ def get_trajectory(request: Request):
 @api_server.post("/disconnect")
 def api_disconnect(request: Request):
     headers = request.headers
-    logging.debug("=" * 80)
-    logging.debug(f"[REQUEST HEADERS] {headers}")
-    logging.debug("=" * 80)
+    log_request_headers(request)
 
     skillberry_context = unflatten_keys(headers).get(SKILLBERRY_CONTEXT.lower())
 
